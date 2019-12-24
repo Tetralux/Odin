@@ -1,6 +1,8 @@
 package thread
 
 import "core:sync"
+import "core:runtime"
+import "core:mem"
 import "core:sys/win32"
 
 Thread_Os_Specific :: struct {
@@ -30,6 +32,12 @@ create :: proc(procedure: Thread_Proc, priority := Thread_Priority.Normal) -> ^T
 		c := context;
 		if t.use_init_context {
 			c = t.init_context;
+		}
+		if c.temp_allocator.data == &runtime.global_scratch_allocator_data {
+			// NOTE(tetra): global temporary storage is not thread safe;
+			// by default it will be used if not explicitly set.
+			// To avoid this, set it to the nil allocator so you are alerted to it.
+			c.temp_allocator = mem.nil_allocator();
 		}
 		context = c;
 

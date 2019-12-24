@@ -1,8 +1,10 @@
 // +build linux, darwin
 package thread;
 
-import "core:sys/unix"
 import "core:sync"
+import "core:runtime"
+import "core:mem"
+import "core:sys/unix"
 
 // NOTE(tetra): Aligned here because of core/unix/pthread_linux.odin/pthread_t.
 // Also see core/sys/darwin/mach_darwin.odin/semaphore_t.
@@ -58,6 +60,12 @@ create :: proc(procedure: Thread_Proc, priority := Thread_Priority.Normal) -> ^T
 		c := context;
 		if t.use_init_context {
 			c = t.init_context;
+		}
+		if c.temp_allocator.data == &runtime.global_scratch_allocator_data {
+			// NOTE(tetra): scratch allocators (as used for temporary storage) are not thread safe;
+			// by default the same global temporary storage will be used if not explicitly set.
+			// To avoid this, set it to the nil allocator so you are alerted to it.
+			c.temp_allocator = mem.nil_allocator();
 		}
 		context = c;
 
