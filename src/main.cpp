@@ -937,7 +937,7 @@ i32 exec_llvm_llc(String output_base) {
 #else
 	// NOTE(zangent): Linux / Unix is unfinished and not tested very well.
 	return system_exec_command_line_app("llc",
-		"llc \"%.*s.bc\" -filetype=obj -relocation-model=pic -O%d "
+		"llc \"%.*s.bc\" -filetype=obj -O%d "
 		"%.*s "
 		"%s%.*s",
 		LIT(output_base),
@@ -1315,13 +1315,24 @@ int main(int arg_count, char const **arg_ptr) {
 		gb_printf_err("Don't know how to cross compile to selected target.\n");
 #endif
 		} else if (selected_target_metrics->metrics == &target_wasm_386) {
-			system_exec_command_line_app("linker", "wasm-ld \"%.*s.obj\" -o \"%.*s.wasm\" %.*s %s %s",
+#if GB_SYSTEM_UNIX
+			auto *object_ext = "o";
+#else
+			auto *object_ext = "obj";
+#endif
+			i32 res = system_exec_command_line_app("linker", "wasm-ld \"%.*s.%s\" -o \"%.*s.wasm\" %.*s %s %s",
 					LIT(output_base),
+					object_ext,
 					LIT(output_base),
 					LIT(build_context.link_flags),
 					has_entry_point ? "--entry main" : "--no-entry", // TODO(tetra): main is not C calling convention though?
 					has_entry_point ? "" : "--relocatable");
 					// "--entry main");
+#if GB_SYSTEM_UNIX
+			if (res == 32512) { // NOTE(tetra): the error code when the linker is not found?..
+				gb_printf_err("You may need to install lld\n");
+			}
+#endif
 		} else {
 			gb_printf_err("Don't know how to cross compile to %.*s.\n", LIT(target_os_names[build_context.metrics.os]));
 		}

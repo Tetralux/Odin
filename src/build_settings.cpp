@@ -148,7 +148,7 @@ gb_global TargetMetrics target_wasm_386 = {
 	TargetArch_386,
 	4,
 	8,
-	str_lit("wasm32"),
+	str_lit("wasm32-unknown-unknown"),
 };
 
 gb_global TargetMetrics target_windows_386 = {
@@ -629,6 +629,19 @@ void init_build_context(TargetMetrics *cross_target) {
 		// llc_flags = gb_string_appendc(llc_flags, "-debug-compile ");
 	}
 
+	switch (bc->metrics.os) {
+	case TargetOs_darwin:
+	case TargetOs_linux:
+		llc_flags = gb_string_appendc(llc_flags, "-relocation-model=pic ");
+		break;
+
+	case TargetOs_wasm:
+		if (bc->is_dll) {
+			llc_flags = gb_string_appendc(llc_flags, "-relocation-model=pic ");
+		}
+		break;
+	}
+
 	// NOTE(zangent): The linker flags to set the build architecture are different
 	// across OSs. It doesn't make sense to allocate extra data on the heap
 	// here, so I just #defined the linker flags to keep things concise.
@@ -653,7 +666,7 @@ void init_build_context(TargetMetrics *cross_target) {
 			break;
 		case TargetOs_darwin:
 			llc_flags = gb_string_appendc(llc_flags, "-march=x86 ");
-			gb_printf_err("Unsupported architecture\n");
+			gb_printf_err("Unsupported architecture %.*s\n", LIT(target_arch_names[bc->metrics.arch]));
 			gb_exit(1);
 			break;
 		case TargetOs_linux:
@@ -662,12 +675,11 @@ void init_build_context(TargetMetrics *cross_target) {
 			break;
 		case TargetOs_wasm:
 			llc_flags = gb_string_appendc(llc_flags, "-march=wasm32 ");
-			if (bc->is_dll) llc_flags = gb_string_appendc(llc_flags, "--relocation-model=pic ");
 			bc->allow_dllexport = true;
 			break;
 		}
 	} else {
-		gb_printf_err("Unsupported architecture\n");
+		gb_printf_err("Unsupported architecture %.*s\n", LIT(target_arch_names[bc->metrics.arch]));
 		gb_exit(1);
 	}
 
