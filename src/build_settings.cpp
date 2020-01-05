@@ -5,6 +5,7 @@ enum TargetOsKind {
 	TargetOs_darwin,
 	TargetOs_linux,
 	TargetOs_essence,
+	TargetOs_wasm,
 
 	TargetOs_COUNT,
 };
@@ -33,6 +34,7 @@ String target_os_names[TargetOs_COUNT] = {
 	str_lit("darwin"),
 	str_lit("linux"),
 	str_lit("essence"),
+	str_lit("wasm"),
 };
 
 String target_arch_names[TargetArch_COUNT] = {
@@ -126,6 +128,7 @@ struct BuildContext {
 	bool   use_lld;
 	bool   vet;
 	bool   cross_compiling;
+	bool   allow_dllexport;
 
 	QueryDataSetSettings query_data_set_settings;
 
@@ -139,6 +142,14 @@ struct BuildContext {
 
 gb_global BuildContext build_context = {0};
 
+
+gb_global TargetMetrics target_wasm_386 = {
+	TargetOs_wasm,
+	TargetArch_386,
+	4,
+	8,
+	str_lit("wasm32"),
+};
 
 gb_global TargetMetrics target_windows_386 = {
 	TargetOs_windows,
@@ -198,6 +209,7 @@ gb_global NamedTargetMetrics named_targets[] = {
 	{ str_lit("linux_amd64"),   &target_linux_amd64 },
 	{ str_lit("windows_386"),   &target_windows_386 },
 	{ str_lit("windows_amd64"), &target_windows_amd64 },
+	{ str_lit("wasm_386"),	    &target_wasm_386 },
 };
 
 NamedTargetMetrics *selected_target_metrics;
@@ -634,22 +646,28 @@ void init_build_context(TargetMetrics *cross_target) {
 			break;
 		}
 	} else if (bc->metrics.arch == TargetArch_386) {
-		llc_flags = gb_string_appendc(llc_flags, "-march=x86 ");
-
 		switch (bc->metrics.os) {
 		case TargetOs_windows:
+			llc_flags = gb_string_appendc(llc_flags, "-march=x86 ");
 			bc->link_flags = str_lit("/machine:x86 ");
 			break;
 		case TargetOs_darwin:
+			llc_flags = gb_string_appendc(llc_flags, "-march=x86 ");
 			gb_printf_err("Unsupported architecture\n");
 			gb_exit(1);
 			break;
 		case TargetOs_linux:
+			llc_flags = gb_string_appendc(llc_flags, "-march=x86 ");
 			bc->link_flags = str_lit("-arch x86 ");
+			break;
+		case TargetOs_wasm:
+			llc_flags = gb_string_appendc(llc_flags, "-march=wasm32 ");
+			if (bc->is_dll) llc_flags = gb_string_appendc(llc_flags, "--relocation-model=pic ");
+			bc->allow_dllexport = true;
 			break;
 		}
 	} else {
-		gb_printf_err("Unsupported architecture\n");;
+		gb_printf_err("Unsupported architecture\n");
 		gb_exit(1);
 	}
 

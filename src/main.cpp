@@ -639,6 +639,11 @@ bool parse_build_flags(Array<String> args) {
 
 							if (!found) {
 								gb_printf_err("Unknown target '%.*s'\n", LIT(str));
+								gb_printf_err("");
+								gb_printf_err("Possible targets:\n");
+								for (int i = 0; i < gb_count_of(named_targets); i++) {
+									gb_printf_err(" - %.*s\n", LIT(named_targets[i].name));
+								}
 								bad_flags = true;
 							}
 
@@ -657,6 +662,7 @@ bool parse_build_flags(Array<String> args) {
 
 							if (str == "dll" || str == "shared") {
 								build_context.is_dll = true;
+								build_context.allow_dllexport = true;
 							} else if (str == "exe") {
 								build_context.is_dll = false;
 							} else {
@@ -919,12 +925,15 @@ i32 exec_llvm_llc(String output_base) {
 		"\"%.*sbin\\llc\" \"%.*s.bc\" -filetype=obj -O%d "
 		"-o \"%.*s.obj\" "
 		"%.*s"
-		"",
+		"%s%.*s",
 		LIT(build_context.ODIN_ROOT),
 		LIT(output_base),
 		build_context.optimization_level,
 		LIT(output_base),
-		LIT(build_context.llc_flags));
+		LIT(build_context.llc_flags),
+		build_context.cross_compiling ? "-mtriple=" : "",
+		(int) (build_context.cross_compiling ? build_context.target_triplet.len : 0),
+		build_context.target_triplet.text);
 #else
 	// NOTE(zangent): Linux / Unix is unfinished and not tested very well.
 	return system_exec_command_line_app("llc",
@@ -1205,10 +1214,6 @@ int main(int arg_count, char const **arg_ptr) {
 
 
 	init_build_context(selected_target_metrics ? selected_target_metrics->metrics : nullptr);
-	if (build_context.word_size == 4) {
-		print_usage_line(0, "%.*s 32-bit is not yet supported", LIT(args[0]));
-		return 1;
-	}
 
 	init_universal();
 	// TODO(bill): prevent compiling without a linker
@@ -1299,13 +1304,30 @@ int main(int arg_count, char const **arg_ptr) {
 		return exit_code;
 	}
 
-	if (build_context.cross_compiling && selected_target_metrics->metrics == &target_essence_amd64) {
+	bool has_entry_point = !build_context.is_dll;
+
+	if (build_context.cross_compiling) {
+		if (0) {
 #ifdef GB_SYSTEM_UNIX
 		system_exec_command_line_app("linker", "x86_64-essence-gcc \"%.*s.o\" -o \"%.*s\" %.*s",
 				LIT(output_base), LIT(output_base), LIT(build_context.link_flags));
 #else
 		gb_printf_err("Don't know how to cross compile to selected target.\n");
 #endif
+		} else if (selected_target_metrics->metrics == &target_wasm_386) {
+			system_exec_command_line_app("linker", "wasm-ld \"%.*s.obj\" -o \"%.*s.wasm\" %.*s %s %s",
+					LIT(output_base),
+					LIT(output_base),
+					LIT(build_context.link_flags),
+					has_entry_point ? "--entry main" : "--no-entry", // TODO(tetra): main is not C calling convention though?
+					has_entry_point ? "" : "--relocatable");
+					// "--entry main");
+		} else {
+			gb_printf_err("Don't know how to cross compile to %.*s.\n", LIT(target_os_names[build_context.metrics.os]));
+		}
+		if (run_output) {
+			gb_printf_err("Don't know how to run cross compiled output for %.*s.\n", LIT(target_os_names[build_context.metrics.os]));
+		}
 	} else {
 	#if defined(GB_SYSTEM_WINDOWS)
 		timings_start_section(timings, str_lit("msvc-link"));

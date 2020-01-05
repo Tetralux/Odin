@@ -50,6 +50,7 @@ foreign {
 	@(link_name="llvm.bswap.i16")       byte_swap_i16 :: proc(i16) -> i16 ---
 	@(link_name="llvm.bswap.i32")       byte_swap_i32 :: proc(i32) -> i32 ---
 	@(link_name="llvm.bswap.i64")       byte_swap_i64 :: proc(i64) -> i64 ---
+
 	@(link_name="llvm.bswap.i128")      byte_swap_u128 :: proc(u128) -> u128 ---
 	@(link_name="llvm.bswap.i128")      byte_swap_i128 :: proc(i128) -> i128 ---
 }
