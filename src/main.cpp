@@ -1314,7 +1314,7 @@ int main(int arg_count, char const **arg_ptr) {
 #else
 		gb_printf_err("Don't know how to cross compile to selected target.\n");
 #endif
-		} else if (selected_target_metrics->metrics == &target_wasm_386) {
+		} else if (selected_target_metrics->metrics == &target_none_wasm32) {
 #if GB_SYSTEM_UNIX
 			auto *object_ext = "o";
 #else

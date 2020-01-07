@@ -1,4 +1,4 @@
-//+build linux, darwin, wasm
+//+build linux, darwin
 package runtime
 
 @(link_name="memset")

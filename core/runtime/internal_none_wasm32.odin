@@ -5,7 +5,6 @@ umodti3 :: proc "c" (a, b: i128) -> i128 {
     return 0;
 }
 
-
 @(link_name="__udivmodti4")
 udivmodti4 :: proc "c" (a, b: u128, rem: ^u128) -> u128 {
     return udivmod128(a, b, rem);
@@ -17,6 +16,7 @@ udivti3 :: proc "c" (a, b: u128) -> u128 {
 }
 
 @(link_name="__ashlti3")
-@export __ashlti3 :: proc "c" (a, b: u128) -> u128 {
+@export
+__ashlti3 :: proc "c" (a, b: u128) -> u128 {
     return 0;
 }

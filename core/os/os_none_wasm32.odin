@@ -2,13 +2,15 @@ package os
 
 import "core:strings"
 
+ARCH :: "wasm32";
+ENDIAN :: "little";
+
 Handle :: distinct i32;
+Errno  :: distinct u32;
 
-Errno :: distinct u32;
-
-stdout : Handle : 0;
-stderr : Handle : 1;
-stdin : Handle : 2;
+stdout: Handle : 0;
+stderr: Handle : 1;
+stdin:  Handle : 2;
 
 INVALID_HANDLE :: ~Handle(0);
 
@@ -65,9 +67,9 @@ O_SYNC     :: 0x01000;
 O_ASYNC    :: 0x02000;
 O_CLOEXEC  :: 0x80000;
 
-// foreign _ {
-//     @(link_name="wasm_write_to_stdout") wasm_write_to_stdout :: proc "c" (ptr: rawptr, len: i32) -> i32 ---;
-// }
+foreign _ {
+    @(link_name="host.print") wasm_write_to_stdout :: proc "c" (ptr: rawptr, len: i32) -> i32 ---;
+}
 
 
 open :: proc(path: string, flags: int = O_RDONLY, mode: int = 0) -> (Handle, Errno) {

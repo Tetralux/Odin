@@ -1,11 +1,11 @@
 enum TargetOsKind {
 	TargetOs_Invalid,
 
+	TargetOs_none,
 	TargetOs_windows,
 	TargetOs_darwin,
 	TargetOs_linux,
 	TargetOs_essence,
-	TargetOs_wasm,
 
 	TargetOs_COUNT,
 };
@@ -15,6 +15,7 @@ enum TargetArchKind {
 
 	TargetArch_amd64,
 	TargetArch_386,
+	TargetArch_wasm32,
 
 	TargetArch_COUNT,
 };
@@ -30,17 +31,18 @@ enum TargetEndianKind {
 
 String target_os_names[TargetOs_COUNT] = {
 	str_lit(""),
+	str_lit("none"),
 	str_lit("windows"),
 	str_lit("darwin"),
 	str_lit("linux"),
 	str_lit("essence"),
-	str_lit("wasm"),
 };
 
 String target_arch_names[TargetArch_COUNT] = {
 	str_lit(""),
 	str_lit("amd64"),
 	str_lit("386"),
+	str_lit("wasm32"),
 };
 
 String target_endian_names[TargetEndian_COUNT] = {
@@ -143,9 +145,9 @@ struct BuildContext {
 gb_global BuildContext build_context = {0};
 
 
-gb_global TargetMetrics target_wasm_386 = {
-	TargetOs_wasm,
-	TargetArch_386,
+gb_global TargetMetrics target_none_wasm32 = {
+	TargetOs_none,
+	TargetArch_wasm32,
 	4,
 	8,
 	str_lit("wasm32-unknown-unknown"),
@@ -204,12 +206,12 @@ struct NamedTargetMetrics {
 
 gb_global NamedTargetMetrics named_targets[] = {
 	{ str_lit("essence_amd64"), &target_essence_amd64 },
-	{ str_lit("darwin_amd64"),   &target_darwin_amd64 },
+	{ str_lit("darwin_amd64"),  &target_darwin_amd64 },
 	{ str_lit("linux_386"),     &target_linux_386 },
 	{ str_lit("linux_amd64"),   &target_linux_amd64 },
 	{ str_lit("windows_386"),   &target_windows_386 },
 	{ str_lit("windows_amd64"), &target_windows_amd64 },
-	{ str_lit("wasm_386"),	    &target_wasm_386 },
+	{ str_lit("none_wasm32"),   &target_none_wasm32 },
 };
 
 NamedTargetMetrics *selected_target_metrics;
@@ -635,9 +637,14 @@ void init_build_context(TargetMetrics *cross_target) {
 		llc_flags = gb_string_appendc(llc_flags, "-relocation-model=pic ");
 		break;
 
-	case TargetOs_wasm:
-		if (bc->is_dll) {
-			llc_flags = gb_string_appendc(llc_flags, "-relocation-model=pic ");
+	case TargetOs_none:
+		if (bc->metrics.arch == TargetArch_wasm32) {
+			if (bc->is_dll) {
+				llc_flags = gb_string_appendc(llc_flags, "-relocation-model=pic ");
+			}
+		} else {
+			gb_printf_err("Unsupported arch %.*s on freestanding target.\n", LIT(target_arch_names[bc->metrics.arch]));
+			gb_exit(1);
 		}
 		break;
 	}
@@ -673,11 +680,10 @@ void init_build_context(TargetMetrics *cross_target) {
 			llc_flags = gb_string_appendc(llc_flags, "-march=x86 ");
 			bc->link_flags = str_lit("-arch x86 ");
 			break;
-		case TargetOs_wasm:
-			llc_flags = gb_string_appendc(llc_flags, "-march=wasm32 ");
-			bc->allow_dllexport = true;
-			break;
 		}
+	} else if (bc->metrics.arch == TargetArch_wasm32) {
+		llc_flags = gb_string_appendc(llc_flags, "-march=wasm32 ");
+		bc->allow_dllexport = true;
 	} else {
 		gb_printf_err("Unsupported architecture %.*s\n", LIT(target_arch_names[bc->metrics.arch]));
 		gb_exit(1);
