@@ -1582,7 +1582,7 @@ int main(int arg_count, char const **arg_ptr) {
 			#endif
 			, linker, LIT(output_base), LIT(output_base), LIT(output_ext),
 			lib_str,
-			"-lc -lm",
+			build_context.no_crt ? "-nostartfiles" : "-lc -lm",
 			LIT(build_context.link_flags),
 			link_settings);
 		if (exit_code != 0) {
