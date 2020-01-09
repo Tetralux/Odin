@@ -57,8 +57,8 @@ i32 system_exec_command_line_app(char const *name, char const *fmt, ...) {
 
 	cmd = string_to_string16(string_buffer_allocator, make_string(cast(u8 *)cmd_line, cmd_len-1));
 	if (CreateProcessW(nullptr, cmd.text,
-	                   nullptr, nullptr, true, 0, nullptr, nullptr,
-	                   &start_info, &pi)) {
+					   nullptr, nullptr, true, 0, nullptr, nullptr,
+					   &start_info, &pi)) {
 		WaitForSingleObject(pi.hProcess, INFINITE);
 		GetExitCodeProcess(pi.hProcess, cast(DWORD *)&exit_code);
 
@@ -92,25 +92,25 @@ i32 system_exec_command_line_app(char const *name, char const *fmt, ...) {
 	// int status = 0;
 
 	// if(pid == 0) {
-	// 	// in child, pid == 0.
-	// 	int ret = execvp(cmd.text, (char* const*) cmd.text);
+	//  // in child, pid == 0.
+	//  int ret = execvp(cmd.text, (char* const*) cmd.text);
 
-	// 	if(ret == -1) {
-	// 		gb_printf_err("Failed to execute command:\n\t%s\n", cmd_line);
+	//  if(ret == -1) {
+	//      gb_printf_err("Failed to execute command:\n\t%s\n", cmd_line);
 
-	// 		// we're in the child, so returning won't do us any good -- just quit.
-	// 		exit(-1);
-	// 	}
+	//      // we're in the child, so returning won't do us any good -- just quit.
+	//      exit(-1);
+	//  }
 
-	// 	// unreachable
-	// 	abort();
+	//  // unreachable
+	//  abort();
 	// } else {
-	// 	// wait for child to finish, then we can continue cleanup
+	//  // wait for child to finish, then we can continue cleanup
 
-	// 	int s = 0;
-	// 	waitpid(pid, &s, 0);
+	//  int s = 0;
+	//  waitpid(pid, &s, 0);
 
-	// 	status = WEXITSTATUS(s);
+	//  status = WEXITSTATUS(s);
 	// }
 
 	// exit_code = status;
@@ -232,6 +232,7 @@ enum BuildFlagKind {
 	BuildFlag_DisableAssert,
 	BuildFlag_NoBoundsCheck,
 	BuildFlag_NoCRT,
+	BuildFlag_LibcDir,
 	BuildFlag_UseLLD,
 	BuildFlag_Vet,
 	BuildFlag_IgnoreUnknownAttributes,
@@ -273,10 +274,10 @@ void add_flag(Array<BuildFlag> *build_flags, BuildFlagKind kind, String name, Bu
 ExactValue build_param_to_exact_value(String name, String param) {
 	ExactValue value = {};
 	if (str_eq_ignore_case(param, str_lit("t")) ||
-	    str_eq_ignore_case(param, str_lit("true"))) {
+		str_eq_ignore_case(param, str_lit("true"))) {
 		value = exact_value_bool(true);
 	} else if (str_eq_ignore_case(param, str_lit("f")) ||
-	           str_eq_ignore_case(param, str_lit("false"))) {
+			   str_eq_ignore_case(param, str_lit("false"))) {
 		value = exact_value_bool(false);
 	} else if (param.len > 0) {
 		if (param[0] == '"') {
@@ -322,6 +323,7 @@ bool parse_build_flags(Array<String> args) {
 	add_flag(&build_flags, BuildFlag_DisableAssert,     str_lit("disable-assert"),    BuildFlagParam_None);
 	add_flag(&build_flags, BuildFlag_NoBoundsCheck,     str_lit("no-bounds-check"),   BuildFlagParam_None);
 	add_flag(&build_flags, BuildFlag_NoCRT,             str_lit("no-crt"),            BuildFlagParam_None);
+	add_flag(&build_flags, BuildFlag_LibcDir,           str_lit("libc-dirpath"),      BuildFlagParam_String);
 	add_flag(&build_flags, BuildFlag_UseLLD,            str_lit("lld"),               BuildFlagParam_None);
 	add_flag(&build_flags, BuildFlag_Vet,               str_lit("vet"),               BuildFlagParam_None);
 	add_flag(&build_flags, BuildFlag_IgnoreUnknownAttributes, str_lit("ignore-unknown-attributes"), BuildFlagParam_None);
@@ -386,12 +388,12 @@ bool parse_build_flags(Array<String> args) {
 							break;
 						case BuildFlagParam_Boolean: {
 							if (str_eq_ignore_case(param, str_lit("t")) ||
-							    str_eq_ignore_case(param, str_lit("true")) ||
-							    param == "1") {
+								str_eq_ignore_case(param, str_lit("true")) ||
+								param == "1") {
 								value = exact_value_bool(true);
 							} else if (str_eq_ignore_case(param, str_lit("f")) ||
-							           str_eq_ignore_case(param, str_lit("false")) ||
-							           param == "0") {
+									   str_eq_ignore_case(param, str_lit("false")) ||
+									   param == "0") {
 								value = exact_value_bool(false);
 							} else {
 								gb_printf_err("Invalid flag parameter for '%.*s' : '%.*s'\n", LIT(name), LIT(param));
@@ -690,6 +692,10 @@ bool parse_build_flags(Array<String> args) {
 							build_context.no_crt = true;
 							break;
 
+						case BuildFlag_LibcDir:
+							build_context.custom_libc_dirpath = value.value_string;
+							break;
+
 						case BuildFlag_UseLLD:
 							build_context.use_lld = true;
 							break;
@@ -759,10 +765,10 @@ bool parse_build_flags(Array<String> args) {
 							path = string_trim_whitespace(path);
 							if (is_import_path_valid(path)) {
 								// #if defined(GB_SYSTEM_WINDOWS)
-								// 	String ext = path_extension(path);
-								// 	if (ext != ".pdb") {
-								// 		path = substring(path, 0, string_extension_position(path));
-								// 	}
+								//  String ext = path_extension(path);
+								//  if (ext != ".pdb") {
+								//      path = substring(path, 0, string_extension_position(path));
+								//  }
 								// #endif
 								build_context.pdb_filepath = path;
 							} else {
@@ -1209,7 +1215,7 @@ int main(int arg_count, char const **arg_ptr) {
 	// NOTE(bill): add 'shared' directory if it is not already set
 	if (!find_library_collection_path(str_lit("shared"), nullptr)) {
 		add_library_collection(str_lit("shared"),
-		                       get_fullpath_relative(heap_allocator(), odin_root_dir(), str_lit("shared")));
+							   get_fullpath_relative(heap_allocator(), odin_root_dir(), str_lit("shared")));
 	}
 
 
@@ -1304,7 +1310,11 @@ int main(int arg_count, char const **arg_ptr) {
 		return exit_code;
 	}
 
-	bool has_entry_point = !build_context.is_dll;
+#if GB_SYSTEM_UNIX
+	auto *object_ext = "o";
+#else
+	auto *object_ext = "obj";
+#endif
 
 	if (build_context.cross_compiling) {
 		if (0) {
@@ -1315,21 +1325,13 @@ int main(int arg_count, char const **arg_ptr) {
 		gb_printf_err("Don't know how to cross compile to selected target.\n");
 #endif
 		} else if (selected_target_metrics->metrics == &target_none_wasm32) {
-#if GB_SYSTEM_UNIX
-			auto *object_ext = "o";
-#else
-			auto *object_ext = "obj";
-#endif
-			i32 res = system_exec_command_line_app("linker", "wasm-ld \"%.*s.%s\" -o \"%.*s.wasm\" %.*s %s %s",
+			i32 res = system_exec_command_line_app("linker", "wasm-ld \"%.*s.%s\" -o \"%.*s.wasm\" %.*s",
 					LIT(output_base),
 					object_ext,
 					LIT(output_base),
-					LIT(build_context.link_flags),
-					has_entry_point ? "--entry main" : "--no-entry", // TODO(tetra): main is not C calling convention though?
-					has_entry_point ? "" : "--relocatable");
-					// "--entry main");
+					LIT(build_context.link_flags));
 #if GB_SYSTEM_UNIX
-			if (res == 32512) { // NOTE(tetra): the error code when the linker is not found?..
+			if (res == 32512) { // NOTE(tetra): the error code when the linker is not found..
 				gb_printf_err("You may need to install lld\n");
 			}
 #endif
@@ -1381,7 +1383,7 @@ int main(int arg_count, char const **arg_ptr) {
 			String lib = ir_gen.module.foreign_library_paths[i];
 			GB_ASSERT(lib.len < gb_count_of(lib_str_buf)-1);
 			isize len = gb_snprintf(lib_str_buf, gb_size_of(lib_str_buf),
-			                        " \"%.*s\"", LIT(lib));
+									" \"%.*s\"", LIT(lib));
 			lib_str = gb_string_appendc(lib_str, lib_str_buf);
 		}
 
@@ -1419,7 +1421,7 @@ int main(int arg_count, char const **arg_ptr) {
 					LIT(build_context.resource_filepath)
 				);
 
-	            if (exit_code != 0) {
+				if (exit_code != 0) {
 					return exit_code;
 				}
 

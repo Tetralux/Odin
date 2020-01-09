@@ -2,7 +2,7 @@ package runtime
 
 @(link_name="__umodti3")
 umodti3 :: proc "c" (a, b: i128) -> i128 {
-    return 0;
+    return a % b;
 }
 
 @(link_name="__udivmodti4")
@@ -18,5 +18,5 @@ udivti3 :: proc "c" (a, b: u128) -> u128 {
 @(link_name="__ashlti3")
 @export
 __ashlti3 :: proc "c" (a, b: u128) -> u128 {
-    return 0;
+    return a << b;
 }

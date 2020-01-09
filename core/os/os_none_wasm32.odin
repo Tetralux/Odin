@@ -2,7 +2,8 @@ package os
 
 import "core:strings"
 
-ARCH :: "wasm32";
+OS     :: "none";
+ARCH   :: "wasm32";
 ENDIAN :: "little";
 
 Handle :: distinct i32;
@@ -16,12 +17,19 @@ INVALID_HANDLE :: ~Handle(0);
 
 @(link_name="__errno_location") 
 @export __errno_location :: proc() -> ^int {
-    return &errno;
+	return &errno;
 }
 @thread_local errno: int;
 
+// TODO(tetra): Do we need `__stack_pointer`? Maybe for `-no-crt`?
+// TODO(tetra): Use these regardless of `-no-crt`, for simplicity???
+// TODO(tetra): Also, we need to provide _start if `-no-crt` - consider options for this because the user might also want to do that.
+foreign _ {
+	__heap_base: rawptr;
+	__data_end:  rawptr;
+}
 
-_File_Time :: struct {
+File_Time :: struct {
 	seconds:     i64,
 	nanoseconds: i64,
 }
@@ -33,19 +41,19 @@ Stat :: struct {
 	mode:          u32, // Mode of the file
 	uid:           u32, // User ID of the file's owner
 	gid:           u32, // Group ID of the file's group
-	_padding:      i32, // 32 bits of padding
+	_:             i32, // 32 bits of padding
 	rdev:          u64, // Device ID, if device
 	size:          i64, // Size of the file, in bytes
 	block_size:    i64, // Optimal bllocksize for I/O
 	blocks:        i64, // Number of 512-byte blocks allocated
 
-	last_access:   _File_Time, // Time of last access
-	modified:      _File_Time, // Time of last modification
-	status_change: _File_Time, // Time of last status change
+	last_access:   File_Time, // Time of last access
+	modified:      File_Time, // Time of last modification
+	status_change: File_Time, // Time of last status change
 
-	_reserve1,
-	_reserve2,
-	_reserve3:     i64,
+	_: i64,
+	_: i64,
+	_: i64,
 };
 
 
@@ -68,7 +76,7 @@ O_ASYNC    :: 0x02000;
 O_CLOEXEC  :: 0x80000;
 
 foreign _ {
-    @(link_name="host.print") wasm_write_to_stdout :: proc "c" (ptr: rawptr, len: i32) -> i32 ---;
+	@(link_name="__wasi_fd_write") __wasi_fd_write :: proc "c" (fd: Handle, ptrs: rawptr, num_ptrs: i32, written: ^i32) -> Errno ---;
 }
 
 
@@ -85,46 +93,44 @@ read :: proc(fd: Handle, data: []byte) -> (int, Errno) {
 }
 
 write :: proc(fd: Handle, data: []byte) -> (int, Errno) {
-    // if fd == stdout {
-    //     wasm_write_to_stdout(#no_bounds_check &data[0], i32(len(data)));
-    //     return int(i32(len(data))), ERROR_NONE;
-    // }
-	return -1, ENOSYS;
+	written: i32;
+	err := __wasi_fd_write(fd, &data[0], 1, &written);
+	return int(written), err;
 }
 
 fstat :: proc(fd: Handle) -> (Stat, Errno) {
-    return {}, ENOSYS;
+	return {}, ENOSYS;
 }
 
-ERROR_NONE:    	Errno : 0;
-EPERM:         	Errno : 1;
-ENOENT:        	Errno : 2;
-ESRCH:         	Errno : 3;
-EINTR:         	Errno : 4;
-EIO:           	Errno : 5;
-ENXIO:         	Errno : 6;
-EBADF:         	Errno : 9;
-EAGAIN:        	Errno : 11;
-ENOMEM:        	Errno : 12;
-EACCES:        	Errno : 13;
-EFAULT:        	Errno : 14;
-EEXIST:        	Errno : 17;
-ENODEV:        	Errno : 19;
-ENOTDIR:       	Errno : 20;
-EISDIR:        	Errno : 21;
-EINVAL:        	Errno : 22;
-ENFILE:        	Errno : 23;
-EMFILE:        	Errno : 24;
-ETXTBSY:       	Errno : 26;
-EFBIG:         	Errno : 27;
-ENOSPC:        	Errno : 28;
-ESPIPE:        	Errno : 29;
-EROFS:         	Errno : 30;
-EPIPE:         	Errno : 32;
+ERROR_NONE: Errno : 0;
+EPERM:      Errno : 1;
+ENOENT:     Errno : 2;
+ESRCH:      Errno : 3;
+EINTR:      Errno : 4;
+EIO:        Errno : 5;
+ENXIO:      Errno : 6;
+EBADF:      Errno : 9;
+EAGAIN:     Errno : 11;
+ENOMEM:     Errno : 12;
+EACCES:     Errno : 13;
+EFAULT:     Errno : 14;
+EEXIST:     Errno : 17;
+ENODEV:     Errno : 19;
+ENOTDIR:    Errno : 20;
+EISDIR:     Errno : 21;
+EINVAL:     Errno : 22;
+ENFILE:     Errno : 23;
+EMFILE:     Errno : 24;
+ETXTBSY:    Errno : 26;
+EFBIG:      Errno : 27;
+ENOSPC:     Errno : 28;
+ESPIPE:     Errno : 29;
+EROFS:      Errno : 30;
+EPIPE:      Errno : 32;
 
-EDEADLK: 		Errno :	35;	/* Resource deadlock would occur */
-ENAMETOOLONG: 	Errno : 36;	/* File name too long */
-ENOLCK: 		Errno : 37;	/* No record locks available */
+EDEADLK:      Errno : 35;	/* Resource deadlock would occur */
+ENAMETOOLONG: Errno : 36;	/* File name too long */
+ENOLCK:       Errno : 37;	/* No record locks available */
 
 ENOSYS: Errno : 38;	/* Invalid system call number */
 
@@ -243,11 +249,11 @@ current_thread_id :: proc "contextless" () -> int {
 
 // TODO: better names for procs and args
 foreign _ {
-    // call this to get the current size of the heap
-    @(link_name="llvm.wasm.memory.size.i32") __wasm_size :: proc(_: u32) -> u32 ---;
+	// call this to get the current size of the heap
+	@(link_name="llvm.wasm.memory.size.i32") __wasm_size :: proc(_: u32) -> u32 ---;
 
-    // call this to grow the heap
-    @(link_name="llvm.wasm.memory.grow.i32") __wasm_grow :: proc(_: u32, delta: u32) -> i32 ---;
+	// call this to grow the heap
+	@(link_name="llvm.wasm.memory.grow.i32") __wasm_grow :: proc(_: u32, delta: u32) -> i32 ---;
 }
 
 heap_alloc :: proc(size: int) -> rawptr {

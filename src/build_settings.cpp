@@ -127,6 +127,7 @@ struct BuildContext {
 	bool   no_bounds_check;
 	bool   no_output_files;
 	bool   no_crt;
+	String custom_libc_dirpath; // set only if the user specified it.
 	bool   use_lld;
 	bool   vet;
 	bool   cross_compiling;
@@ -150,7 +151,7 @@ gb_global TargetMetrics target_none_wasm32 = {
 	TargetArch_wasm32,
 	4,
 	8,
-	str_lit("wasm32-unknown-unknown"),
+	str_lit("wasm32"),
 };
 
 gb_global TargetMetrics target_windows_386 = {
@@ -313,8 +314,31 @@ bool find_library_collection_path(String name, String *path) {
 // is_abs_path
 // has_subdir
 
-String const WIN32_SEPARATOR_STRING = {cast(u8 *)"\\", 1};
-String const NIX_SEPARATOR_STRING   = {cast(u8 *)"/",  1};
+
+String const WIN32_SEPARATOR_STRING = {cast(u8 *) "\\", 1};
+String const NIX_SEPARATOR_STRING   = {cast(u8 *) "/", 1};
+
+String convert_path_to_native_seperators(gbAllocator a, String const &path) {
+#if GB_SYSTEM_UNIX
+	String native_seperator = NIX_SEPARATOR_STRING;
+	String foreign_seperator = WIN32_SEPARATOR_STRING;
+#elif GB_SYSTEM_WINDOWS
+	String native_seperator = WIN32_SEPARATOR_STRING;
+	String foreign_seperator = NIX_SEPARATOR_STRING;
+#endif
+
+	gbString s = gb_string_duplicate(a, cast(char *) path.text);
+
+	for (isize i = 0; i < path.len; i++) {
+		s[i] = path[i];
+		if (s[i] == foreign_seperator[0]) {
+			s[i] = native_seperator[0];
+		}
+	}
+
+	return make_string_c(s);
+}
+
 
 #if defined(GB_SYSTEM_WINDOWS)
 String odin_root_dir(void) {
@@ -625,11 +649,12 @@ void init_build_context(TargetMetrics *cross_target) {
 	bc->opt_flags   = str_lit(" ");
 	bc->target_triplet = metrics.target_triplet;
 
-
 	gbString llc_flags = gb_string_make_reserve(heap_allocator(), 64);
 	if (bc->ODIN_DEBUG) {
 		// llc_flags = gb_string_appendc(llc_flags, "-debug-compile ");
 	}
+
+	gbString link_flags = gb_string_make_reserve(heap_allocator(), 16);
 
 	switch (bc->metrics.os) {
 	case TargetOs_darwin:
@@ -643,7 +668,7 @@ void init_build_context(TargetMetrics *cross_target) {
 				llc_flags = gb_string_appendc(llc_flags, "-relocation-model=pic ");
 			}
 		} else {
-			gb_printf_err("Unsupported arch %.*s on freestanding target.\n", LIT(target_arch_names[bc->metrics.arch]));
+			gb_printf_err("Unsupported architecture %.*s on freestanding target.\n", LIT(target_arch_names[bc->metrics.arch]));
 			gb_exit(1);
 		}
 		break;
@@ -657,19 +682,19 @@ void init_build_context(TargetMetrics *cross_target) {
 
 		switch (bc->metrics.os) {
 		case TargetOs_windows:
-			bc->link_flags = str_lit("/machine:x64 ");
+			link_flags = gb_string_appendc(link_flags, "/machine:x64 ");
 			break;
 		case TargetOs_darwin:
 			break;
 		case TargetOs_linux:
-			bc->link_flags = str_lit("-arch x86-64 ");
+			link_flags = gb_string_appendc(link_flags, "-arch x86-64 ");
 			break;
 		}
 	} else if (bc->metrics.arch == TargetArch_386) {
 		switch (bc->metrics.os) {
 		case TargetOs_windows:
 			llc_flags = gb_string_appendc(llc_flags, "-march=x86 ");
-			bc->link_flags = str_lit("/machine:x86 ");
+			link_flags = gb_string_appendc(link_flags, "/machine:x86 ");
 			break;
 		case TargetOs_darwin:
 			llc_flags = gb_string_appendc(llc_flags, "-march=x86 ");
@@ -678,12 +703,37 @@ void init_build_context(TargetMetrics *cross_target) {
 			break;
 		case TargetOs_linux:
 			llc_flags = gb_string_appendc(llc_flags, "-march=x86 ");
-			bc->link_flags = str_lit("-arch x86 ");
+			link_flags = gb_string_appendc(link_flags, "-arch x86 ");
 			break;
 		}
 	} else if (bc->metrics.arch == TargetArch_wasm32) {
 		llc_flags = gb_string_appendc(llc_flags, "-march=wasm32 ");
 		bc->allow_dllexport = true;
+
+		gbString odin_dir = cast(char *) alloc_cstring(heap_allocator(), directory_from_path(build_context.ODIN_ROOT));
+		gbString libc_dirpath = gb_string_make(heap_allocator(), cast(char *) build_context.custom_libc_dirpath.text);
+
+		if (!build_context.no_crt) {
+			if (gb_string_length(libc_dirpath) == 0) {
+				libc_dirpath = gb_string_append_fmt(libc_dirpath, "%s\\libc\\wasm32-wasi", odin_dir);
+			}
+
+			link_flags = gb_string_make_space_for(link_flags, 128);
+			link_flags = gb_string_append_fmt(link_flags, "\"%s\\*.a\" ", libc_dirpath);
+
+			link_flags = gb_string_append_fmt(link_flags, "\"%s\\crt1.o\" ", libc_dirpath);
+		}
+
+		if (bc->is_dll) {
+			link_flags = gb_string_appendc(link_flags, "--no-entry --relocatable ");
+		} else {
+			link_flags = gb_string_appendc(link_flags, "--entry _start ");
+		}
+
+		String link_flags_str = make_string_c(link_flags);
+		link_flags_str = convert_path_to_native_seperators(heap_allocator(), link_flags_str);
+
+		bc->link_flags = link_flags_str;
 	} else {
 		gb_printf_err("Unsupported architecture %.*s\n", LIT(target_arch_names[bc->metrics.arch]));
 		gb_exit(1);
