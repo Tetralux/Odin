@@ -11935,89 +11935,9 @@ void ir_gen_tree(irGen *s) {
 	GB_ASSERT(compile_unit->kind == irDebugInfo_CompileUnit);
 
 
-#if defined(GB_SYSTEM_WINDOWS)
-	if (build_context.is_dll && !has_dll_main) {
-		// DllMain :: proc(inst: rawptr, reason: u32, reserved: rawptr) -> i32
-		String name = str_lit("DllMain");
-		Type *proc_params = alloc_type_tuple();
-		Type *proc_results = alloc_type_tuple();
-
-		Scope *proc_scope = gb_alloc_item(a, Scope);
-
-		array_init(&proc_params->Tuple.variables, a, 3);
-		array_init(&proc_results->Tuple.variables, a, 1);
-
-		proc_params->Tuple.variables[0] = alloc_entity_param(proc_scope, blank_token, t_rawptr, false, false);
-		proc_params->Tuple.variables[1] = alloc_entity_param(proc_scope, make_token_ident(str_lit("reason")), t_i32, false, false);
-		proc_params->Tuple.variables[2] = alloc_entity_param(proc_scope, blank_token, t_rawptr, false, false);
-
-
-		proc_results->Tuple.variables[0] = alloc_entity_param(proc_scope, empty_token, t_i32, false, false);
-
-
-		Type *proc_type = alloc_type_proc(proc_scope,
-		                                  proc_params, 3,
-		                                  proc_results, 1, false, ProcCC_StdCall);
-
-		// TODO(bill): make this more robust
-		proc_type->Proc.abi_compat_params = array_make<Type *>(a, proc_params->Tuple.variables.count);
-		for_array(i, proc_params->Tuple.variables) {
-			proc_type->Proc.abi_compat_params[i] = proc_params->Tuple.variables[i]->type;
-		}
-		proc_type->Proc.abi_compat_result_type = proc_results->Tuple.variables[0]->type;
-
-		Ast *body = alloc_ast_node(nullptr, Ast_Invalid);
-		Entity *e = alloc_entity_procedure(nullptr, make_token_ident(name), proc_type, 0);
-		irValue *p = ir_value_procedure(m, e, proc_type, nullptr, body, name);
-
-		map_set(&m->values, hash_entity(e), p);
-		map_set(&m->members, hash_string(name), p);
-
-		irProcedure *proc = &p->Proc;
-		proc->inlining = ProcInlining_no_inline; // TODO(bill): is no_inline a good idea?
-		proc->is_entry_point = true;
-		e->Procedure.link_name = name;
-
-		ir_begin_procedure_body(proc);
-		defer (ir_end_procedure_body(proc));
-
-		// NOTE(bill): https://msdn.microsoft.com/en-us/library/windows/desktop/ms682583(v=vs.85).aspx
-		// DLL_PROCESS_ATTACH == 1
-
-		irAddr reason_addr = ir_build_addr_from_entity(proc, proc_params->Tuple.variables[1], nullptr);
-		irValue *cond = ir_emit_comp(proc, Token_CmpEq, ir_addr_load(proc, reason_addr), v_one32);
-		irBlock *then = ir_new_block(proc, nullptr, "if.then");
-		irBlock *done = ir_new_block(proc, nullptr, "if.done"); // NOTE(bill): Append later
-		ir_emit_if(proc, cond, then, done);
-		ir_start_block(proc, then);
-
-		{
-			irValue **found = map_get(&m->values, hash_entity(entry_point));
-			ir_emit(proc, ir_alloc_instr(proc, irInstr_StartupRuntime));
-			if (found != nullptr) {
-				Array<irValue *> args = {};
-				ir_emit_call(proc, *found, args);
-			}
-		}
-
-		ir_emit_jump(proc, done);
-		ir_start_block(proc, done);
-
-		ir_emit_return(proc, v_one32);
-	}
-#endif
 	if (!(build_context.is_dll && !has_dll_main)) {
 		// main :: proc(argc: i32, argv: ^^u8) -> i32
 		String name = str_lit("main");
-
-#if 0
-		if (str_eq_ignore_case(cross_compile_target, str_lit("Essence"))) {
-			// This is a bit hacky,
-			// because this makes this function the first function run in the executable
-			// so it won't actually have the argc/argv arguments.
-			name = str_lit("ProgramEntry");
-		}
-#endif
 
 		Type *proc_params = alloc_type_tuple();
 		Type *proc_results = alloc_type_tuple();
@@ -12168,13 +12088,84 @@ void ir_gen_tree(irGen *s) {
 				}
 				ir_end_procedure_body(proc);
 			}
+		} else if (build_context.is_dll && !has_dll_main) {
+			// DllMain :: proc(inst: rawptr, reason: u32, reserved: rawptr) -> i32
+			String name = str_lit("DllMain");
+			Type *proc_params = alloc_type_tuple();
+			Type *proc_results = alloc_type_tuple();
+
+			Scope *proc_scope = gb_alloc_item(a, Scope);
+
+			array_init(&proc_params->Tuple.variables, a, 3);
+			array_init(&proc_results->Tuple.variables, a, 1);
+
+			proc_params->Tuple.variables[0] = alloc_entity_param(proc_scope, blank_token, t_rawptr, false, false);
+			proc_params->Tuple.variables[1] = alloc_entity_param(proc_scope, make_token_ident(str_lit("reason")), t_i32, false, false);
+			proc_params->Tuple.variables[2] = alloc_entity_param(proc_scope, blank_token, t_rawptr, false, false);
+
+
+			proc_results->Tuple.variables[0] = alloc_entity_param(proc_scope, empty_token, t_i32, false, false);
+
+
+			Type *proc_type = alloc_type_proc(proc_scope,
+			                                  proc_params, 3,
+			                                  proc_results, 1, false, ProcCC_StdCall);
+
+			// TODO(bill): make this more robust
+			proc_type->Proc.abi_compat_params = array_make<Type *>(a, proc_params->Tuple.variables.count);
+			for_array(i, proc_params->Tuple.variables) {
+				proc_type->Proc.abi_compat_params[i] = proc_params->Tuple.variables[i]->type;
+			}
+			proc_type->Proc.abi_compat_result_type = proc_results->Tuple.variables[0]->type;
+
+			Ast *body = alloc_ast_node(nullptr, Ast_Invalid);
+			Entity *e = alloc_entity_procedure(nullptr, make_token_ident(name), proc_type, 0);
+			irValue *p = ir_value_procedure(m, e, proc_type, nullptr, body, name);
+
+			map_set(&m->values, hash_entity(e), p);
+			map_set(&m->members, hash_string(name), p);
+
+			irProcedure *proc = &p->Proc;
+			proc->inlining = ProcInlining_no_inline; // TODO(bill): is no_inline a good idea?
+			proc->is_entry_point = true;
+			e->Procedure.link_name = name;
+
+			ir_begin_procedure_body(proc);
+			defer (ir_end_procedure_body(proc));
+
+			// NOTE(bill): https://msdn.microsoft.com/en-us/library/windows/desktop/ms682583(v=vs.85).aspx
+			// DLL_PROCESS_ATTACH == 1
+
+			irAddr reason_addr = ir_build_addr_from_entity(proc, proc_params->Tuple.variables[1], nullptr);
+			irValue *cond = ir_emit_comp(proc, Token_CmpEq, ir_addr_load(proc, reason_addr), v_one32);
+			irBlock *then = ir_new_block(proc, nullptr, "if.then");
+			irBlock *done = ir_new_block(proc, nullptr, "if.done"); // NOTE(bill): Append later
+			ir_emit_if(proc, cond, then, done);
+			ir_start_block(proc, then);
+
+			{
+				irValue **found = map_get(&m->values, hash_entity(entry_point));
+				ir_emit(proc, ir_alloc_instr(proc, irInstr_StartupRuntime));
+				if (found != nullptr) {
+					Array<irValue *> args = {};
+					ir_emit_call(proc, *found, args);
+				}
+			}
+
+			ir_emit_jump(proc, done);
+			ir_start_block(proc, done);
+
+			ir_emit_return(proc, v_one32);
 		}
 		break;
 
 	case TargetOs_linux:
 	case TargetOs_darwin:
 		if (!build_context.is_dll && build_context.no_crt) {
-			s->print_chkstk = true; // TODO: ???
+			s->print_chkstk = true;
+			if (build_context.metrics.os == TargetOs_darwin) {
+				s->print_chkstk = false; // NOTE(tetra): According to platin, you can't avoid linking the CRT on darwin so... uncharted waters.
+			}
 
 			{
 				// void _start(void)  // CC_none
@@ -12212,7 +12203,46 @@ void ir_gen_tree(irGen *s) {
 				}
 				ir_end_procedure_body(proc);
 			}
-			printf("emitted linux _start\n");
+		}
+		break;
+
+	case TargetOs_essence:
+		s->print_chkstk = false;
+		{
+			// void ProgramEntry(void)  // CC_StdCall
+
+			String name = str_lit("ProgramEntry");
+			Type *proc_params = alloc_type_tuple();
+			Type *proc_results = alloc_type_tuple();
+
+
+			Type *proc_type = alloc_type_proc(nullptr,
+											  nullptr, 0,
+											  nullptr, 0,
+											  false,
+											  ProcCC_StdCall);
+
+			Ast *body = alloc_ast_node(nullptr, Ast_Invalid);
+			Entity *e = alloc_entity_procedure(nullptr, make_token_ident(name), proc_type, 0);
+			irValue *p = ir_value_procedure(m, e, proc_type, nullptr, body, name);
+
+			m->entry_point_entity = e;
+
+			map_set(&m->values, hash_entity(e), p);
+			map_set(&m->members, hash_string(name), p);
+
+			irProcedure *proc = &p->Proc;
+			// proc->tags = ProcTag_no_inline; // TODO(bill): is no_inline a good idea?
+			e->Procedure.link_name = name;
+
+			ir_begin_procedure_body(proc);
+			ir_emit(proc, ir_alloc_instr(proc, irInstr_StartupRuntime));
+			irValue **found = map_get(&proc->module->values, hash_entity(entry_point));
+			if (found != nullptr) {
+				Array<irValue *> args = {};
+				ir_emit_call(proc, *found, args);
+			}
+			ir_end_procedure_body(proc);
 		}
 		break;
 
@@ -12220,10 +12250,10 @@ void ir_gen_tree(irGen *s) {
 		switch (build_context.metrics.arch) {
 		case TargetArch_wasm32:
 			if (!build_context.is_dll && build_context.no_crt) {
-				s->print_chkstk = true; // TODO: ???
+				s->print_chkstk = false;
 
 				{
-					// void _start(void)  // CC_none
+					// void _start(void)
 
 					String name = str_lit("_start");
 					Type *proc_params = alloc_type_tuple();
@@ -12234,7 +12264,7 @@ void ir_gen_tree(irGen *s) {
 													  nullptr, 0,
 													  nullptr, 0,
 													  false,
-													  ProcCC_None);
+													  ProcCC_None); // TODO: None or C?
 
 					Ast *body = alloc_ast_node(nullptr, Ast_Invalid);
 					Entity *e = alloc_entity_procedure(nullptr, make_token_ident(name), proc_type, 0);
@@ -12258,20 +12288,17 @@ void ir_gen_tree(irGen *s) {
 					}
 					ir_end_procedure_body(proc);
 				}
-				printf("emitted wasm32 _start\n");
 			}
 			break;
 
 		default:
-			gb_printf_err("Don't know how to entry native entry point for OS %.*s\n", LIT(target_os_names[build_context.metrics.os]));
-			gb_exit(1);
+			gb_printf_err("Don't know how to generate native entry point for %.*s\n", LIT(target_os_names[build_context.metrics.os]));
 			break;
-
 		}
 		break;
 
 	default:
-		gb_printf_err("Don't know how to entry native entry point for OS %.*s\n", LIT(target_os_names[build_context.metrics.os]));
+		gb_printf_err("Don't know how to generate native entry point for %.*s\n", LIT(target_os_names[build_context.metrics.os]));
 		break;
 
 	}
