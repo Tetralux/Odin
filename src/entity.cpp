@@ -83,8 +83,6 @@ struct ParameterValue {
 	};
 };
 
-
-
 // An Entity is a named "thing" in the language
 struct Entity {
 	EntityKind  kind;
@@ -139,6 +137,9 @@ struct Entity {
 			DeferredProcedure deferred_procedure;
 			bool    is_foreign;
 			bool    is_export;
+
+			bool    has_weak_linkage;
+			Entity  *weak_linkage_overridden_proc; // only set if a strongly-linked Odin proc overrode this weakly-linked proc
 		} Procedure;
 		struct {
 			Array<Entity *> entities;

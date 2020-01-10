@@ -96,6 +96,7 @@ struct DeferredProcedure {
 
 struct AttributeContext {
 	bool    is_export;
+	bool    has_weak_linkage;
 	bool    is_static;
 	bool    require_results;
 	bool    force_foreign_import;

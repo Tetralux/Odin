@@ -2253,6 +2253,9 @@ DECL_ATTRIBUTE_PROC(proc_decl_attribute) {
 			error(elem, "Expected a string value for '%.*s'", LIT(name));
 		}
 		return true;
+	} else if (name == "weak_linkage") {
+		ac->has_weak_linkage = true;
+		return true;
 	} else if (name == "deprecated") {
 		ExactValue ev = check_decl_attribute_value(c, value);
 

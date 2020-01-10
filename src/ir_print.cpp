@@ -2315,6 +2315,9 @@ void ir_print_proc(irFileBuffer *f, irModule *m, irProcedure *proc) {
 		// if (proc->tags & ProcTag_dll_import) {
 			// ir_write_string(f, "dllimport ");
 		// }
+		if (proc->has_weak_linkage) {
+			ir_write_str_lit(f, "extern_weak ");
+		}
 	} else {
 		ir_write_byte(f, '\n');
 		ir_write_str_lit(f, "define ");

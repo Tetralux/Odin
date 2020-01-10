@@ -21,12 +21,18 @@ INVALID_HANDLE :: ~Handle(0);
 }
 @thread_local errno: int;
 
-// TODO(tetra): Do we need `__stack_pointer`? Maybe for `-no-crt`?
-// TODO(tetra): Use these regardless of `-no-crt`, for simplicity???
-// TODO(tetra): Also, we need to provide _start if `-no-crt` - consider options for this because the user might also want to do that.
+// NOTE(tetra): __stack_pointer provided by wasm-ld I think?
+// NOTE(tetra): Stack grows upwards from __data_end and heap grows upwards from __heap_base;
+//              Stack size is therefore the difference between these pointers.
+//              Stack size is set at link time.
 foreign _ {
 	__heap_base: rawptr;
 	__data_end:  rawptr;
+
+	// call this to get the current size of the heap
+	@(link_name="llvm.wasm.memory.size.i32") __wasm_size :: proc(_: u32) -> u32 ---;
+	// call this to grow the heap
+	@(link_name="llvm.wasm.memory.grow.i32") __wasm_grow :: proc(_: u32, delta: u32) -> i32 ---;
 }
 
 File_Time :: struct {
@@ -76,7 +82,7 @@ O_ASYNC    :: 0x02000;
 O_CLOEXEC  :: 0x80000;
 
 foreign _ {
-	@(link_name="__wasi_fd_write") __wasi_fd_write :: proc "c" (fd: Handle, ptrs: rawptr, num_ptrs: i32, written: ^i32) -> Errno ---;
+	@(link_name="__wasi_fd_write", weak_linkage) __wasi_fd_write :: proc "c" (fd: Handle, ptrs: rawptr, num_ptrs: i32, written: ^i32) -> Errno ---;
 }
 
 
@@ -93,6 +99,9 @@ read :: proc(fd: Handle, data: []byte) -> (int, Errno) {
 }
 
 write :: proc(fd: Handle, data: []byte) -> (int, Errno) {
+	if __wasi_fd_write == nil do return -1, ENOSYS;
+	// TODO(tetra): .. or if -no-crt?
+
 	written: i32;
 	err := __wasi_fd_write(fd, &data[0], 1, &written);
 	return int(written), err;
@@ -241,20 +250,12 @@ file_size :: proc(fd: Handle) -> (i64, Errno) {
 }
 
 
+
 current_thread_id :: proc "contextless" () -> int {
 	return 1; // TODO: real value here
 }
 
 
-
-// TODO: better names for procs and args
-foreign _ {
-	// call this to get the current size of the heap
-	@(link_name="llvm.wasm.memory.size.i32") __wasm_size :: proc(_: u32) -> u32 ---;
-
-	// call this to grow the heap
-	@(link_name="llvm.wasm.memory.grow.i32") __wasm_grow :: proc(_: u32, delta: u32) -> i32 ---;
-}
 
 heap_alloc :: proc(size: int) -> rawptr {
 	return nil;

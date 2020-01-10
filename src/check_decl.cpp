@@ -673,6 +673,8 @@ void check_proc_decl(CheckerContext *ctx, Entity *e, DeclInfo *d) {
 	}
 
 	e->Procedure.is_export = ac.is_export;
+	e->Procedure.has_weak_linkage = ac.has_weak_linkage;
+
 	e->deprecated_message = ac.deprecated_message;
 	ac.link_name = handle_link_name(ctx, e->token, ac.link_name, ac.link_prefix);
 	if (ac.has_disabled_proc) {
@@ -686,10 +688,14 @@ void check_proc_decl(CheckerContext *ctx, Entity *e, DeclInfo *d) {
 		}
 	}
 
-	bool is_foreign         = e->Procedure.is_foreign;
-	bool is_export          = e->Procedure.is_export;
+	bool is_foreign = e->Procedure.is_foreign;
+	bool is_export  = e->Procedure.is_export;
+	bool is_weak    = e->Procedure.has_weak_linkage;
 
 	if (e->pkg != nullptr && e->token.string == "main") {
+		if (is_weak) {
+			error(e->token, "Entry point cannot have weak linkage");
+		}
 		if (pt->param_count != 0 ||
 		    pt->result_count != 0) {
 			gbString str = type_to_string(proc_type);
@@ -708,6 +714,10 @@ void check_proc_decl(CheckerContext *ctx, Entity *e, DeclInfo *d) {
 				ctx->info->entry_point = e;
 			}
 		}
+	}
+
+	if (is_weak && !is_foreign) {
+		error(pl->type, "Only foreign procedures can have weak linkage.");
 	}
 
 	if (is_foreign && is_export) {
@@ -762,6 +772,7 @@ void check_proc_decl(CheckerContext *ctx, Entity *e, DeclInfo *d) {
 		array_add(&ctx->checker->procs_with_deferred_to_check, e);
 	}
 
+
 	if (is_foreign) {
 		String name = e->token.string;
 		if (e->Procedure.link_name.len > 0) {
@@ -783,9 +794,12 @@ void check_proc_decl(CheckerContext *ctx, Entity *e, DeclInfo *d) {
 			if (is_type_proc(this_type) && is_type_proc(other_type)) {
 				if (!are_signatures_similar_enough(this_type, other_type)) {
 					error(d->proc_lit,
-					      "Redeclaration of foreign procedure '%.*s' with different type signatures\n"
-					      "\tat %.*s(%td:%td)",
-					      LIT(name), LIT(pos.file), pos.line, pos.column);
+							"Redeclaration of foreign procedure '%.*s' with different type signatures\n"
+							"\tat %.*s(%td:%td)\n"
+							"\tForeign procedure signature: %s\n"
+							"\tOther signature:             %s\n",
+							LIT(name), LIT(pos.file), pos.line, pos.column,
+							type_to_string(this_type), type_to_string(other_type));
 				}
 			} else if (!are_types_identical(this_type, other_type)) {
 				error(d->proc_lit,
@@ -810,11 +824,17 @@ void check_proc_decl(CheckerContext *ctx, Entity *e, DeclInfo *d) {
 			if (found) {
 				Entity *f = *found;
 				TokenPos pos = f->token.pos;
-				// TODO(bill): Better error message?
-				error(d->proc_lit,
-				      "Non unique linking name for procedure '%.*s'\n"
-				      "\tother at %.*s(%td:%td)",
-				      LIT(name), LIT(pos.file), pos.line, pos.column);
+
+				if (!is_weak && f->kind == Entity_Procedure && f->Procedure.has_weak_linkage) {
+					// TODO(tetra): Allow override foreign weak proc in same package as declaration.
+					error(d->proc_lit, "Overriding a foreign procedure with weak linkage in the same package is not implemented");
+				} else {
+					// TODO(bill): Better error message?
+					error(d->proc_lit,
+					      "Non unique linking name for procedure '%.*s'\n"
+					      "\tother at %.*s(%td:%td)",
+					      LIT(name), LIT(pos.file), pos.line, pos.column);
+				}
 			} else if (name == "main") {
 				error(d->proc_lit, "The link name 'main' is reserved for internal use");
 			} else {

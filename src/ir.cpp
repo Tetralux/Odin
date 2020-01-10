@@ -137,6 +137,7 @@ struct irProcedure {
 	ProcInlining          inlining;
 	bool                  is_foreign;
 	bool                  is_export;
+	bool                  has_weak_linkage;
 	bool                  is_entry_point;
 
 	irDebugInfo *         debug_scope;
@@ -11876,7 +11877,7 @@ void ir_gen_tree(irGen *s) {
 			}
 		}
 	#else
-			if (e->kind == Entity_Procedure && e->Procedure.is_export) {
+			if (e->kind == Entity_Procedure && (e->Procedure.is_export || e->Procedure.has_weak_linkage)) {
 				// Okay
 			} else if (e->kind == Entity_Procedure && e->Procedure.link_name.len > 0) {
 				// Handle later
@@ -11897,7 +11898,7 @@ void ir_gen_tree(irGen *s) {
 			String original_name = name;
 			Ast *body = pl->body;
 
-			if (e->Procedure.is_foreign) {
+			if (e->Procedure.is_foreign || e->Procedure.has_weak_linkage) {
 				name = e->token.string; // NOTE(bill): Don't use the mangled name
 				ir_add_foreign_library_path(m, e->Procedure.foreign_library);
 			}
@@ -11912,6 +11913,7 @@ void ir_gen_tree(irGen *s) {
 			p->Proc.tags = pl->tags;
 			p->Proc.inlining = pl->inlining;
 			p->Proc.is_export = e->Procedure.is_export;
+			p->Proc.has_weak_linkage = e->Procedure.has_weak_linkage;
 
 			ir_module_add_value(m, e, p);
 			HashKey hash_name = hash_string(name);
