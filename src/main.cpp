@@ -690,10 +690,19 @@ bool parse_build_flags(Array<String> args) {
 
 						case BuildFlag_NoCRT:
 							build_context.no_crt = true;
+							build_context.ODIN_NO_CRT = true;
+							if (build_context.custom_libc_dirpath.len > 0) {
+								gb_printf_err("Cannot have both -no-crt and -libc-dirpath.\n");
+								bad_flags = true;
+							}
 							break;
 
 						case BuildFlag_LibcDir:
 							build_context.custom_libc_dirpath = value.value_string;
+							if (build_context.no_crt) {
+								gb_printf_err("Cannot have both -no-crt and -libc-dirpath.\n");
+								bad_flags = true;
+							}
 							break;
 
 						case BuildFlag_UseLLD:
@@ -980,6 +989,12 @@ void print_show_help(String const arg0, String const &command) {
 	bool run_or_build = command == "run" || command == "build";
 	bool check = command == "run" || command == "build" || command == "check";
 
+	if (command == "") {
+		build = true;
+		run_or_build = true;
+		check = true;
+	}
+
 	print_usage_line(0, "");
 	print_usage_line(1, "Flags");
 	print_usage_line(0, "");
@@ -1045,6 +1060,10 @@ void print_show_help(String const arg0, String const &command) {
 	if (check) {
 		print_usage_line(1, "-target:<string>");
 		print_usage_line(2, "Sets the target for the executable to be built in");
+		print_usage_line(2, "Possible targets:");
+		for (isize i = 0; i < gb_count_of(named_targets); i++) {
+			print_usage_line(3, "- %.*s", LIT(named_targets[i].name));
+		}
 		print_usage_line(0, "");
 	}
 
@@ -1067,6 +1086,12 @@ void print_show_help(String const arg0, String const &command) {
 
 		print_usage_line(1, "-use-lld");
 		print_usage_line(2, "Use the LLD linker rather than the default");
+		print_usage_line(0, "");
+
+		print_usage_line(1, "-libc-dirpath");
+		print_usage_line(2, "Provide custom libc directory where ctr1.o and *.a files are located.");
+		print_usage_line(2, "Normally, the libc distributed with the Odin project will be used.");
+		print_usage_line(2, "Ignored if -no-crt is used.");
 		print_usage_line(0, "");
 	}
 
@@ -1190,6 +1215,9 @@ int main(int arg_count, char const **arg_ptr) {
 	} else if (command == "version") {
 		gb_printf("%.*s version %.*s\n", LIT(args[0]), LIT(ODIN_VERSION));
 		return 0;
+	} else if (command == "-help") {
+		print_show_help(args[0], str_lit(""));
+		gb_exit(1);
 	} else {
 		usage(args[0]);
 		return 1;

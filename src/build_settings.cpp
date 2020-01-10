@@ -94,6 +94,7 @@ struct BuildContext {
 	String ODIN_VENDOR;  // compiler vendor
 	String ODIN_VERSION; // compiler version
 	String ODIN_ROOT;    // Odin ROOT
+	bool   ODIN_NO_CRT;  // using -no-crt
 	bool   ODIN_DEBUG;   // Odin in debug mode
 	bool   ODIN_DISABLE_ASSERT; // Whether the default 'assert' et al is disabled in code or not
 

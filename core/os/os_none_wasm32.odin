@@ -1,6 +1,8 @@
 package os
 
 import "core:strings"
+import "core:c"
+import "core:mem"
 
 OS     :: "none";
 ARCH   :: "wasm32";
@@ -32,7 +34,7 @@ foreign _ {
 	// call this to get the current size of the heap
 	@(link_name="llvm.wasm.memory.size.i32") __wasm_size :: proc(_: u32) -> u32 ---;
 	// call this to grow the heap
-	@(link_name="llvm.wasm.memory.grow.i32") __wasm_grow :: proc(_: u32, delta: u32) -> i32 ---;
+	@(link_name="llvm.wasm.memory.grow.i32") __wasm_grow :: proc(current_pages_allocated: i32, delta: u32) -> i32 ---; // .. I think?
 }
 
 File_Time :: struct {
@@ -81,10 +83,21 @@ O_SYNC     :: 0x01000;
 O_ASYNC    :: 0x02000;
 O_CLOEXEC  :: 0x80000;
 
-foreign _ {
-	@(link_name="__wasi_fd_write", weak_linkage) __wasi_fd_write :: proc "c" (fd: Handle, ptrs: rawptr, num_ptrs: i32, written: ^i32) -> Errno ---;
+when ODIN_NO_CRT {
+	// NOTE(tetra): With no-crt, we have no way to output to stdout; there _is no_ stdout.
+	// These are just shims for if you do actually want to.
+	foreign _ {
+		@(link_name="write", weak_linkage) __wasm_write :: proc "c" (fd: Handle, buf: rawptr, bytes: int, written: ^int) -> Errno ---;
+		@(link_name="read",  weak_linkage) __wasm_read  :: proc "c" (fd: Handle, buf: rawptr, max_readable: int, read: ^int) -> Errno ---;
+		@(link_name="exit",  weak_linkage) __wasm_exit  :: proc "c" (exit_code: int) -> ! ---;
+	}
+} else {
+	foreign _ {
+		@(link_name="__wasi_fd_write",  weak_linkage) __wasi_fd_write :: proc "c" (fd: Handle, iovs: rawptr, num_iovs: i32, written: ^c.size_t) -> Errno ---;
+		@(link_name="__wasi_fd_read",   weak_linkage) __wasi_fd_read  :: proc "c" (fd: Handle, iovs: rawptr, num_iovs: c.size_t, read: ^c.size_t) -> Errno ---;
+		@(link_name="__wasi_proc_exit", weak_linkage) __wasi_proc_exit :: proc "c" (exit_code: i32) -> ! ---;
+	}
 }
-
 
 open :: proc(path: string, flags: int = O_RDONLY, mode: int = 0) -> (Handle, Errno) {
 	return INVALID_HANDLE, ENOSYS;
@@ -95,16 +108,31 @@ close :: proc(fd: Handle) -> Errno {
 }
 
 read :: proc(fd: Handle, data: []byte) -> (int, Errno) {
-	return -1, ENOSYS;
+	when ODIN_NO_CRT {
+		read: int;
+		if __wasm_read == nil do return -1, ENOSYS;
+		err := __wasm_read(fd, &data[0], len(data), &read);
+		return read, err;
+	} else {
+		read: i32;
+		if __wasi_fd_read == nil do return -1, ENOSYS;
+		err := __wasi_fd_read(fd, &data[0], len(data), &read);
+		return read, err;
+	}
 }
 
 write :: proc(fd: Handle, data: []byte) -> (int, Errno) {
-	if __wasi_fd_write == nil do return -1, ENOSYS;
-	// TODO(tetra): .. or if -no-crt?
-
-	written: i32;
-	err := __wasi_fd_write(fd, &data[0], 1, &written);
-	return int(written), err;
+	when ODIN_NO_CRT {
+		written: int;
+		if __wasm_write == nil do return -1, ENOSYS;
+		err := __wasm_write(fd, &data[0], len(data), &written);
+		return written, err;
+	} else {
+		written: i32;
+		if __wasi_fd_write == nil do return -1, ENOSYS;
+		err := __wasi_fd_write(fd, &data[0], 1, &written);
+		return int(written), err;
+	}
 }
 
 fstat :: proc(fd: Handle) -> (Stat, Errno) {
@@ -249,22 +277,109 @@ file_size :: proc(fd: Handle) -> (i64, Errno) {
 	return -1, ENOSYS;
 }
 
+get_page_size :: proc() -> int {
+	return 64 * 1024; // 64K
+}
 
 
 current_thread_id :: proc "contextless" () -> int {
 	return 1; // TODO: real value here
 }
 
-
+exit :: proc(exit_code: int) -> ! {
+	when ODIN_NO_CRT {
+		if __wasm_exit != nil do __wasm_exit(exit_code);
+	} else {
+		if __wasi_proc_exit != nil do __wasi_proc_exit(i32(exit_code));
+	}
+}
 
 heap_alloc :: proc(size: int) -> rawptr {
 	return nil;
 }
- 
-heap_free :: proc(old_memory: rawptr) {
-	return;
+
+heap_free :: proc(ptr: rawptr) {
+	// TODO
 }
 
 heap_resize :: proc(ptr: rawptr, new_size: int) -> rawptr {
 	return nil;
 }
+
+// @private heap_cursor: int;
+// @private current_heap_size: int;
+// @private current_heap_pages: int;
+
+// @private
+// Heap_Free_List :: struct {
+// 	next: ^Heap_Free_List,
+// 	len: u16,
+// 	ptrs: [16382]rawptr,
+// }
+
+// @private heap_free_list: Heap_Free_List; // NOTE(tetra): initialized by heap_alloc
+
+// // TODO: Improve.
+// heap_alloc :: proc(size: int) -> rawptr {
+// 	for i in 0..heap_free_list.len-1 {
+// 		ptr := #no_bounds_check heap_free_list.ptrs[i];
+// 		size_ptr := mem.ptr_offset((^i32)(ptr), -1);
+// 		if int(size_ptr^) >= size {
+// 			if i > 0 {
+// 				heap_free_list.ptrs[i] = heap_free_list.ptrs[heap_free_list.len-1];
+// 				heap_free_list.len -= 1;
+// 			}
+// 			return ptr;
+// 		}
+// 	}
+
+// 	remaining := current_heap_size - heap_cursor;
+
+// 	if (remaining < size) {
+// 		page_size := get_page_size();
+
+// 		pages_needed := 0;
+// 		for remaining < size {
+// 			pages_needed += 1;
+// 			remaining += page_size;
+// 		}
+
+// 		// TODO(tetra): Handle grow failure
+// 		_ = __wasm_grow(i32(current_heap_pages), u32(pages_needed));
+// 		current_heap_size += page_size;
+// 		current_heap_pages += pages_needed;
+// 	}
+
+// 	offset := heap_cursor + size_of(i32); // to store the size
+// 	heap_cursor += size + size_of(i32);
+
+// 	ptr := rawptr(uintptr(__heap_base) + uintptr(offset));
+
+// 	offset_ptr := (^i32)(uintptr(ptr) - size_of(i32));
+// 	assert(size < int(max(i32)));
+// 	offset_ptr^ = i32(size);
+
+// 	return ptr;
+// }
+
+// heap_free :: proc(old_memory: rawptr) {
+// 	list := &heap_free_list;
+// 	for list.next != nil do list = list.next;
+
+// 	// TODO: alloc new list and chain it.
+// 	assert(list.len+1 <= len(list.ptrs));
+
+// 	list.ptrs[list.len] = old_memory;
+// 	list.len += 1;
+// }
+
+// heap_resize :: proc(old_ptr: rawptr, new_size: int) -> rawptr {
+// 	new_ptr := heap_alloc(new_size);
+// 	if new_ptr == nil do return nil;
+
+// 	size_ptr := mem.ptr_offset((^i32)(old_ptr), -1);
+// 	mem.copy(new_ptr, old_ptr, int(size_ptr^));
+
+// 	heap_free(old_ptr);
+// 	return new_ptr;
+// }
