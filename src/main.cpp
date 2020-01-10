@@ -232,6 +232,7 @@ enum BuildFlagKind {
 	BuildFlag_DisableAssert,
 	BuildFlag_NoBoundsCheck,
 	BuildFlag_NoCRT,
+	BuildFlag_CrtDir,
 	BuildFlag_UseLLD,
 	BuildFlag_Vet,
 	BuildFlag_IgnoreUnknownAttributes,
@@ -322,6 +323,7 @@ bool parse_build_flags(Array<String> args) {
 	add_flag(&build_flags, BuildFlag_DisableAssert,     str_lit("disable-assert"),    BuildFlagParam_None);
 	add_flag(&build_flags, BuildFlag_NoBoundsCheck,     str_lit("no-bounds-check"),   BuildFlagParam_None);
 	add_flag(&build_flags, BuildFlag_NoCRT,             str_lit("no-crt"),            BuildFlagParam_None);
+	add_flag(&build_flags, BuildFlag_CrtDir,           str_lit("crt-dirpath"),      BuildFlagParam_String);
 	add_flag(&build_flags, BuildFlag_UseLLD,            str_lit("lld"),               BuildFlagParam_None);
 	add_flag(&build_flags, BuildFlag_Vet,               str_lit("vet"),               BuildFlagParam_None);
 	add_flag(&build_flags, BuildFlag_IgnoreUnknownAttributes, str_lit("ignore-unknown-attributes"), BuildFlagParam_None);
@@ -687,6 +689,19 @@ bool parse_build_flags(Array<String> args) {
 
 						case BuildFlag_NoCRT:
 							build_context.no_crt = true;
+							build_context.ODIN_NO_CRT = true;
+							if (build_context.custom_libc_dirpath.len > 0) {
+								gb_printf_err("Cannot have both -no-crt and -crt-dirpath.\n");
+								bad_flags = true;
+							}
+							break;
+
+						case BuildFlag_CrtDir:
+							build_context.custom_libc_dirpath = value.value_string;
+							if (build_context.no_crt) {
+								gb_printf_err("Cannot have both -no-crt and -crt-dirpath.\n");
+								bad_flags = true;
+							}
 							break;
 
 						case BuildFlag_UseLLD:
@@ -970,6 +985,12 @@ void print_show_help(String const arg0, String const &command) {
 	bool run_or_build = command == "run" || command == "build";
 	bool check = command == "run" || command == "build" || command == "check";
 
+	if (command == "") {
+		build = true;
+		run_or_build = true;
+		check = true;
+	}
+
 	print_usage_line(0, "");
 	print_usage_line(1, "Flags");
 	print_usage_line(0, "");
@@ -1057,6 +1078,12 @@ void print_show_help(String const arg0, String const &command) {
 
 		print_usage_line(1, "-no-crt");
 		print_usage_line(2, "Disables automatic linking with the C Run Time");
+		print_usage_line(0, "");
+
+		print_usage_line(1, "-crt-dirpath");
+		print_usage_line(2, "Provide custom CRT directory where ctr1.o and the libc's *.a files are located.");
+		print_usage_line(2, "Only used for cross compliation.");
+		print_usage_line(2, "Ignored if -no-crt is used.");
 		print_usage_line(0, "");
 
 		print_usage_line(1, "-use-lld");
@@ -1184,6 +1211,9 @@ int main(int arg_count, char const **arg_ptr) {
 	} else if (command == "version") {
 		gb_printf("%.*s version %.*s\n", LIT(args[0]), LIT(ODIN_VERSION));
 		return 0;
+	} else if (command == "-help") {
+		print_show_help(args[0], str_lit(""));
+		gb_exit(1);
 	} else {
 		usage(args[0]);
 		return 1;

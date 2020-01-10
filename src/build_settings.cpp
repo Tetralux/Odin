@@ -94,6 +94,7 @@ struct BuildContext {
 	String ODIN_VENDOR;  // compiler vendor
 	String ODIN_VERSION; // compiler version
 	String ODIN_ROOT;    // Odin ROOT
+	bool   ODIN_NO_CRT;  // using -no-crt
 	bool   ODIN_DEBUG;   // Odin in debug mode
 	bool   ODIN_DISABLE_ASSERT; // Whether the default 'assert' et al is disabled in code or not
 
@@ -130,6 +131,7 @@ struct BuildContext {
 	bool   use_lld;
 	bool   vet;
 	bool   cross_compiling;
+	String custom_libc_dirpath; // set only if the user specified it.
 
 	QueryDataSetSettings query_data_set_settings;
 
@@ -208,10 +210,11 @@ gb_global NamedTargetMetrics named_targets[] = {
 	{ str_lit("darwin_amd64"),   &target_darwin_amd64 },
 	{ str_lit("linux_386"),     &target_linux_386 },
 	{ str_lit("linux_amd64"),   &target_linux_amd64 },
-	{ str_lit("windows_386"),   &target_windows_386 },
-	{ str_lit("windows_amd64"), &target_windows_amd64 },
 
 	{ str_lit("linux_aarch64_armv7a"),   &target_linux_aarch64 }, // TODO(tetra): Need a way to provide the v7a part...
+
+	{ str_lit("windows_386"),   &target_windows_386 },
+	{ str_lit("windows_amd64"), &target_windows_amd64 },
 };
 
 NamedTargetMetrics *selected_target_metrics;

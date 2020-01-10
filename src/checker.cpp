@@ -710,6 +710,7 @@ void init_universal(void) {
 	add_global_string_constant(str_lit("ODIN_VERSION"), bc->ODIN_VERSION);
 	add_global_string_constant(str_lit("ODIN_ROOT"),    bc->ODIN_ROOT);
 	add_global_constant(str_lit("ODIN_DEBUG"), t_untyped_bool, exact_value_bool(bc->ODIN_DEBUG));
+	add_global_constant(str_lit("ODIN_NO_CRT"), t_untyped_bool, exact_value_bool(bc->ODIN_NO_CRT));
 	add_global_constant(str_lit("ODIN_DISABLE_ASSERT"), t_untyped_bool, exact_value_bool(bc->ODIN_DISABLE_ASSERT));
 
 
