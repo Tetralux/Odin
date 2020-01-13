@@ -675,9 +675,6 @@ void init_build_context(TargetMetrics *cross_target) {
 		break;
 	}
 
-	// NOTE(zangent): The linker flags to set the build architecture are different
-	// across OSs. It doesn't make sense to allocate extra data on the heap
-	// here, so I just #defined the linker flags to keep things concise.
 	if (bc->metrics.arch == TargetArch_amd64) {
 		llc_flags = gb_string_appendc(llc_flags, "-march=x86-64 ");
 

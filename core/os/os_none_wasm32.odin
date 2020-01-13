@@ -23,7 +23,6 @@ INVALID_HANDLE :: ~Handle(0);
 }
 @thread_local errno: int;
 
-// NOTE(tetra): __stack_pointer provided by wasm-ld I think?
 // NOTE(tetra): Stack grows upwards from __data_end and heap grows upwards from __heap_base;
 //              Stack size is therefore the difference between these pointers.
 //              Stack size is set at link time.
@@ -84,17 +83,15 @@ O_ASYNC    :: 0x02000;
 O_CLOEXEC  :: 0x80000;
 
 when ODIN_NO_CRT {
-	// NOTE(tetra): With no-crt, we have no way to output to stdout; there _is no_ stdout.
-	// These are just shims for if you do actually want to.
 	foreign _ {
-		@(link_name="write", weak_linkage) __wasm_write :: proc "c" (fd: Handle, buf: rawptr, bytes: int, written: ^int) -> Errno ---;
-		@(link_name="read",  weak_linkage) __wasm_read  :: proc "c" (fd: Handle, buf: rawptr, max_readable: int, read: ^int) -> Errno ---;
-		@(link_name="exit",  weak_linkage) __wasm_exit  :: proc "c" (exit_code: int) -> ! ---;
+		@weak_linkage __odin_os_write :: proc(fd: Handle, buf: []byte, written: ^i64) -> Errno ---;
+		@weak_linkage __odin_os_read  :: proc(fd: Handle, buf: []byte, read: ^i64) -> Errno ---;
+		@weak_linkage __odin_os_exit  :: proc(exit_code: int) -> ! ---;
 	}
 } else {
 	foreign _ {
-		@(link_name="__wasi_fd_write",  weak_linkage) __wasi_fd_write :: proc "c" (fd: Handle, iovs: rawptr, num_iovs: i32, written: ^c.size_t) -> Errno ---;
-		@(link_name="__wasi_fd_read",   weak_linkage) __wasi_fd_read  :: proc "c" (fd: Handle, iovs: rawptr, num_iovs: c.size_t, read: ^c.size_t) -> Errno ---;
+		@(link_name="__wasi_fd_write",  weak_linkage) __wasi_fd_write  :: proc "c" (fd: Handle, iovs: rawptr, num_iovs: i32, written: ^c.size_t) -> Errno ---;
+		@(link_name="__wasi_fd_read",   weak_linkage) __wasi_fd_read   :: proc "c" (fd: Handle, iovs: rawptr, num_iovs: c.size_t, read: ^c.size_t) -> Errno ---;
 		@(link_name="__wasi_proc_exit", weak_linkage) __wasi_proc_exit :: proc "c" (exit_code: i32) -> ! ---;
 	}
 }
@@ -109,29 +106,25 @@ close :: proc(fd: Handle) -> Errno {
 
 read :: proc(fd: Handle, data: []byte) -> (int, Errno) {
 	when ODIN_NO_CRT {
-		read: int;
-		if __wasm_read == nil do return -1, ENOSYS;
-		err := __wasm_read(fd, &data[0], len(data), &read);
-		return read, err;
+		if __odin_os_read == nil do return -1, ENOSYS;
+		read: i64;
+		return int(read), __odin_os_read(fd, data, &read);
 	} else {
-		read: i32;
 		if __wasi_fd_read == nil do return -1, ENOSYS;
-		err := __wasi_fd_read(fd, &data[0], len(data), &read);
-		return read, err;
+		read := c.size_t(len(data));
+		return int(read), __wasi_fd_read(fd, &data[0], 1, &read);
 	}
 }
 
 write :: proc(fd: Handle, data: []byte) -> (int, Errno) {
 	when ODIN_NO_CRT {
-		written: int;
-		if __wasm_write == nil do return -1, ENOSYS;
-		err := __wasm_write(fd, &data[0], len(data), &written);
-		return written, err;
+		if __odin_os_write == nil do return -1, ENOSYS;
+		written: i64;
+		return int(written), __odin_os_write(fd, data, &written);
 	} else {
-		written: i32;
 		if __wasi_fd_write == nil do return -1, ENOSYS;
-		err := __wasi_fd_write(fd, &data[0], 1, &written);
-		return int(written), err;
+		written: c.size_t;
+		return int(written), __wasi_fd_write(fd, &data[0], 1, &written);
 	}
 }
 
@@ -277,18 +270,19 @@ file_size :: proc(fd: Handle) -> (i64, Errno) {
 	return -1, ENOSYS;
 }
 
-get_page_size :: proc() -> int {
+get_page_size :: inline proc() -> int {
 	return 64 * 1024; // 64K
 }
 
 
 current_thread_id :: proc "contextless" () -> int {
-	return 1; // TODO: real value here
+	return -1; // TODO: real value here
 }
 
 exit :: proc(exit_code: int) -> ! {
 	when ODIN_NO_CRT {
-		if __wasm_exit != nil do __wasm_exit(exit_code);
+		if __odin_os_exit != nil do __odin_os_exit(exit_code); // NOTE: Should not return.
+		for {}
 	} else {
 		if __wasi_proc_exit != nil do __wasi_proc_exit(i32(exit_code));
 	}
