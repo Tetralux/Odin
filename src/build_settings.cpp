@@ -15,6 +15,8 @@ enum TargetArchKind {
 	TargetArch_amd64,
 	TargetArch_386,
 
+	TargetArch_aarch64, // TODO(tetra): All the bollocks!
+
 	TargetArch_COUNT,
 };
 
@@ -39,6 +41,7 @@ String target_arch_names[TargetArch_COUNT] = {
 	str_lit(""),
 	str_lit("amd64"),
 	str_lit("386"),
+	str_lit("aarch64"),
 };
 
 String target_endian_names[TargetEndian_COUNT] = {
@@ -51,6 +54,7 @@ TargetEndianKind target_endians[TargetArch_COUNT] = {
 	TargetEndian_Invalid,
 	TargetEndian_Little,
 	TargetEndian_Little,
+	TargetEndian_Little, // NOTE(tetra): ARM has non-fixed endianness after v7.
 };
 
 
@@ -170,6 +174,14 @@ gb_global TargetMetrics target_linux_amd64 = {
 	str_lit("x86_64-pc-linux-gnu"),
 };
 
+gb_global TargetMetrics target_linux_aarch64 = {
+	TargetOs_linux,
+	TargetArch_aarch64,
+	8,
+	16,
+	str_lit("aarch64-pc-linux-gnu"),
+};
+
 gb_global TargetMetrics target_darwin_amd64 = {
 	TargetOs_darwin,
 	TargetArch_amd64,
@@ -198,6 +210,8 @@ gb_global NamedTargetMetrics named_targets[] = {
 	{ str_lit("linux_amd64"),   &target_linux_amd64 },
 	{ str_lit("windows_386"),   &target_windows_386 },
 	{ str_lit("windows_amd64"), &target_windows_amd64 },
+
+	{ str_lit("linux_aarch64_armv7a"),   &target_linux_aarch64 }, // TODO(tetra): Need a way to provide the v7a part...
 };
 
 NamedTargetMetrics *selected_target_metrics;
@@ -648,6 +662,8 @@ void init_build_context(TargetMetrics *cross_target) {
 			bc->link_flags = str_lit("-arch x86 ");
 			break;
 		}
+	} else if (bc->metrics.arch == TargetArch_aarch64) {
+		llc_flags = gb_string_appendc(llc_flags, "-march=aarch64 ");
 	} else {
 		gb_printf_err("Unsupported architecture\n");;
 		gb_exit(1);

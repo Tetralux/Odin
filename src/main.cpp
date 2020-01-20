@@ -639,6 +639,11 @@ bool parse_build_flags(Array<String> args) {
 
 							if (!found) {
 								gb_printf_err("Unknown target '%.*s'\n", LIT(str));
+								gb_printf_err("Possible targets:\n");
+								for (int i = 0; i < gb_count_of(named_targets); i++) {
+									gb_printf_err(" - %.*s\n", LIT(named_targets[i].name));
+								}
+								gb_printf_err("\n");
 								bad_flags = true;
 							}
 
@@ -1030,6 +1035,10 @@ void print_show_help(String const arg0, String const &command) {
 	if (check) {
 		print_usage_line(1, "-target:<string>");
 		print_usage_line(2, "Sets the target for the executable to be built in");
+		print_usage_line(2, "Possible targets:");
+		for (int i = 0; i < gb_count_of(named_targets); i++) {
+			print_usage_line(2, " - %.*s", LIT(named_targets[i].name));
+		}
 		print_usage_line(0, "");
 	}
 
@@ -1295,13 +1304,20 @@ int main(int arg_count, char const **arg_ptr) {
 		return exit_code;
 	}
 
-	if (build_context.cross_compiling && selected_target_metrics->metrics == &target_essence_amd64) {
+	if (build_context.cross_compiling) {
+		if (selected_target_metrics->metrics == &target_essence_amd64) {
 #ifdef GB_SYSTEM_UNIX
-		system_exec_command_line_app("linker", "x86_64-essence-gcc \"%.*s.o\" -o \"%.*s\" %.*s",
-				LIT(output_base), LIT(output_base), LIT(build_context.link_flags));
+			system_exec_command_line_app("linker", "x86_64-essence-gcc \"%.*s.o\" -o \"%.*s\" %.*s",
+					LIT(output_base), LIT(output_base), LIT(build_context.link_flags));
 #else
-		gb_printf_err("Don't know how to cross compile to selected target.\n");
+			gb_printf_err("Don't know how to cross compile to selected target on non-Unix.\n");
 #endif
+		} else if (selected_target_metrics->metrics == &target_linux_aarch64) {
+			system_exec_command_line_app("linker", "ld.lld \"%.*s.o\" -o \"%.*s\" %.*s",
+					LIT(output_base), LIT(output_base), LIT(build_context.link_flags));
+		} else {
+			gb_printf_err("Don't know how to cross compile to selected target\n");
+		}
 	} else {
 	#if defined(GB_SYSTEM_WINDOWS)
 		timings_start_section(timings, str_lit("msvc-link"));
