@@ -181,7 +181,7 @@ gb_global TargetMetrics target_linux_aarch64 = {
 	TargetArch_aarch64,
 	8,
 	16,
-	str_lit("aarch64-pc-linux-gnu"),
+	str_lit("aarch64-pc-linux-musl"),
 };
 
 gb_global TargetMetrics target_darwin_amd64 = {
@@ -573,6 +573,28 @@ String get_fullpath_core(gbAllocator a, String path) {
 }
 
 
+Array<String> get_cross_compile_libc_objects(String libc_root, gbAllocator allocator) {
+	Array<String> objs = array_make<String>(allocator);
+
+	Array<FileInfo> list = {};
+	ReadDirectoryError rd_err = read_directory(libc_root, &list);
+	if (rd_err != ReadDirectory_None) {
+		gb_printf_err("Unable to read libc directory: %.*s", LIT(libc_root));
+		gb_exit(1);
+	}
+	defer (array_free(&list));
+
+	for_array(i, list) {
+		FileInfo inf = list[i];
+		String ext = path_extension(inf.fullpath);
+		if (ext == str_lit(".a") || remove_directory_from_path(inf.fullpath) == str_lit("crt1.o")) {
+			array_add(&objs, inf.fullpath);
+		}
+	}
+
+	return objs;
+}
+
 
 void init_build_context(TargetMetrics *cross_target) {
 	BuildContext *bc = &build_context;
@@ -634,20 +656,18 @@ void init_build_context(TargetMetrics *cross_target) {
 		// llc_flags = gb_string_appendc(llc_flags, "-debug-compile ");
 	}
 
-	// NOTE(zangent): The linker flags to set the build architecture are different
-	// across OSs. It doesn't make sense to allocate extra data on the heap
-	// here, so I just #defined the linker flags to keep things concise.
+	gbString link_flags = gb_string_make_reserve(heap_allocator(), 16);
+
 	if (bc->metrics.arch == TargetArch_amd64) {
-		llc_flags = gb_string_appendc(llc_flags, "-march=x86-64 ");
 
 		switch (bc->metrics.os) {
 		case TargetOs_windows:
-			bc->link_flags = str_lit("/machine:x64 ");
+			link_flags = gb_string_appendc(link_flags, "/machine:x64 ");
 			break;
 		case TargetOs_darwin:
 			break;
 		case TargetOs_linux:
-			bc->link_flags = str_lit("-arch x86-64 ");
+			link_flags = gb_string_appendc(link_flags, "-arch x86-64 ");
 			break;
 		}
 	} else if (bc->metrics.arch == TargetArch_386) {
@@ -655,24 +675,50 @@ void init_build_context(TargetMetrics *cross_target) {
 
 		switch (bc->metrics.os) {
 		case TargetOs_windows:
-			bc->link_flags = str_lit("/machine:x86 ");
+			link_flags = gb_string_appendc(link_flags, "/machine:x86 ");
 			break;
 		case TargetOs_darwin:
 			gb_printf_err("Unsupported architecture\n");
 			gb_exit(1);
 			break;
 		case TargetOs_linux:
-			bc->link_flags = str_lit("-arch x86 ");
+			link_flags = gb_string_appendc(link_flags, "-arch x86 ");
 			break;
 		}
 	} else if (bc->metrics.arch == TargetArch_aarch64) {
 		llc_flags = gb_string_appendc(llc_flags, "-march=aarch64 ");
 	} else {
-		gb_printf_err("Unsupported architecture\n");;
+		gb_printf_err("Unsupported architecture\n");
 		gb_exit(1);
 	}
 
 	bc->llc_flags = make_string_c(llc_flags);
+
+	if (bc->cross_compiling && !bc->no_crt) {
+		String libc_root = bc->custom_libc_dirpath;
+		if (libc_root.len == 0) {
+			gbString temp = gb_string_make_reserve(heap_allocator(), 32);
+			temp = gb_string_append_fmt(temp, "libc/%s", bc->metrics.target_triplet);
+			libc_root = make_string_c(temp);
+		}
+
+		if (!path_is_directory(libc_root)) {
+			if (bc->custom_libc_dirpath.len > 0) {
+				gb_printf_err("Custom CRT directory does not exist.\n");
+			} else {
+				gb_printf_err("No CRT provided for target.\n");
+			}
+			gb_exit(1);
+		}
+
+		Array<String> objects = get_cross_compile_libc_objects(libc_root, heap_allocator());
+		for_array(i, objects) {
+			String obj = objects[i];
+			link_flags = gb_string_append_fmt(link_flags, "\"%.*s\" ", LIT(obj));
+		}
+	}
+
+	bc->link_flags = make_string_c(link_flags);
 
 	bc->optimization_level = gb_clamp(bc->optimization_level, 0, 3);
 

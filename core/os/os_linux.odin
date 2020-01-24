@@ -253,7 +253,11 @@ X_OK :: 1; // Test for execute permission
 W_OK :: 2; // Test for write permission
 R_OK :: 4; // Test for read permission
 
+SYS_WRITE:  Syscall : 4;
 SYS_GETTID: Syscall : 186;
+
+// TODO: Remove the libc stuff and either do the syscalls manually, OR,
+// use `when` to put in the different things.
 
 foreign libc {
 	@(link_name="__errno_location") __errno_location    :: proc() -> ^int ---;
@@ -284,6 +288,7 @@ foreign dl {
 	@(link_name="dlclose")          _unix_dlclose       :: proc(handle: rawptr) -> int ---;
 	@(link_name="dlerror")          _unix_dlerror       :: proc() -> cstring ---;
 }
+
 
 is_path_separator :: proc(r: rune) -> bool {
 	return r == '/';
