@@ -248,8 +248,10 @@ control_flow :: proc() {
 			fmt.println("32-bit");
 		case "amd64":
 			fmt.println("64-bit");
+		case "aarch64":
+			fmt.println("64-bit ARM");
 		case: // default
-			fmt.println("Unsupported architecture");
+			fmt.println("[demo] Unsupported architecture");
 		}
 
 		// Odin’s `switch` is like one in C or C++, except that Odin only runs the selected case.

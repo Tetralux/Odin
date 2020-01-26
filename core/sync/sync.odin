@@ -1,9 +1,16 @@
 package sync
 
-foreign {
-	@(link_name="llvm.x86.sse2.pause")
-	yield_processor :: proc() ---
+// TODO(tetra): Something more useful here?
+// For now, it's like this so that the demo can run.
+when ODIN_ARCH == "amd64" || ODIN_ARCH == "x86" {
+	foreign {
+		@(link_name="llvm.x86.sse2.pause")
+		yield_processor :: proc() ---
+	}
+} else {
+	yield_processor :: proc() {}
 }
+
 
 Ticket_Mutex :: struct {
 	ticket:  u64,
