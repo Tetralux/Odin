@@ -1353,7 +1353,7 @@ int main(int arg_count, char const **arg_ptr) {
 		gb_printf_err("Don't know how to cross compile to selected target.\n");
 #endif
 		} else if (selected_target_metrics->metrics == &target_none_wasm32) {
-			i32 res = system_exec_command_line_app("linker", "wasm-ld \"%.*s.%s\" -o \"%.*s.wasm\" %.*s",
+			i32 res = system_exec_command_line_app("linker", "wasm-ld \"%.*s.%s\" -o \"%.*s.wasm\" %.*s --import-memory", // TODO(tetra): We probably don't want this to be here unconditionally...
 					LIT(output_base),
 					object_ext,
 					LIT(output_base),

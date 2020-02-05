@@ -18,5 +18,5 @@ udivti3 :: proc "c" (a, b: u128) -> u128 {
 @(link_name="__ashlti3")
 @export
 __ashlti3 :: proc "c" (a, b: u128) -> u128 {
-    return a << b;
+    return 0; // TODO(tetra)
 }

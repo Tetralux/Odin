@@ -18,10 +18,12 @@ stdin:  Handle : 2;
 INVALID_HANDLE :: ~Handle(0);
 
 @(link_name="__errno_location") 
-@export __errno_location :: proc() -> ^int {
+@export __errno_location :: proc "cdecl" () -> ^i32 {
 	return &errno;
 }
-@thread_local errno: int;
+@thread_local errno: i32;
+
+// @export __stack_pointer: rawptr;
 
 // NOTE(tetra): Stack grows upwards from __data_end and heap grows upwards from __heap_base;
 //              Stack size is therefore the difference between these pointers.
@@ -66,7 +68,7 @@ Stat :: struct {
 
 
 get_last_error :: proc() -> int {
-	return __errno_location()^;
+	return int(__errno_location()^);
 }
 
 O_RDONLY   :: 0x00000;
