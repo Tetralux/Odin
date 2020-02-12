@@ -2,7 +2,10 @@ package runtime
 
 @(link_name="__umodti3")
 umodti3 :: proc "c" (a, b: i128) -> i128 {
-    return a % b;
+    /// TODO(tetra): This is probably not right...
+    r: u128;
+    udivmod128(u128(a), u128(b), &r);
+    return i128(r);
 }
 
 @(link_name="__udivmodti4")
