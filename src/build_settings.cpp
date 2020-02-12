@@ -320,12 +320,12 @@ String const WIN32_SEPARATOR_STRING = {cast(u8 *) "\\", 1};
 String const NIX_SEPARATOR_STRING   = {cast(u8 *) "/", 1};
 
 String convert_path_to_native_seperators(gbAllocator a, String const &path) {
-#if GB_SYSTEM_UNIX
-	String native_seperator = NIX_SEPARATOR_STRING;
-	String foreign_seperator = WIN32_SEPARATOR_STRING;
-#elif GB_SYSTEM_WINDOWS
+#if GB_SYSTEM_WINDOWS
 	String native_seperator = WIN32_SEPARATOR_STRING;
 	String foreign_seperator = NIX_SEPARATOR_STRING;
+#else
+	String native_seperator = NIX_SEPARATOR_STRING;
+	String foreign_seperator = WIN32_SEPARATOR_STRING;
 #endif
 
 	gbString s = gb_string_duplicate(a, cast(char *) path.text);
