@@ -162,6 +162,16 @@ read :: proc(fd: Handle, data: []byte) -> (int, Errno) {
 	return int(total_read), ERROR_NONE;
 }
 
+read_once :: proc(fd: Handle, data: []byte) -> (n: int, err: Errno) {
+	read: win32.DWORD = ---;
+	e := win32.ReadFile(win32.HANDLE(fd), &data[0], u32(len(data)), &read, nil);
+	if read <= 0 || !e {
+		err = Errno(win32.GetLastError());
+	}
+	n = int(read);
+	return;
+}
+
 seek :: proc(fd: Handle, offset: i64, whence: int) -> (i64, Errno) {
 	w: u32;
 	switch whence {
