@@ -4,6 +4,9 @@ package os
 import "core:sys/win32"
 import "core:intrinsics"
 
+import "core:strings" // for concat, has_suffix
+import "core:mem" // for Dynamic_Arena
+
 OS :: "windows";
 
 Handle    :: distinct uintptr;
@@ -47,6 +50,7 @@ ERROR_DIR_NOT_EMPTY:          Errno : 145;
 ERROR_ALREADY_EXISTS:         Errno : 183;
 ERROR_ENVVAR_NOT_FOUND:       Errno : 203;
 ERROR_MORE_DATA:              Errno : 234;
+ERROR_DIRECTORY:              Errno : 267; // directory name invalid
 ERROR_OPERATION_ABORTED:      Errno : 995;
 ERROR_IO_PENDING:             Errno : 997;
 ERROR_NOT_FOUND:              Errno : 1168;
@@ -368,4 +372,106 @@ is_windows_8_1 :: proc() -> bool {
 is_windows_10 :: proc() -> bool {
 	osvi := get_windows_version_ansi();
 	return (osvi.major_version == 10 && osvi.minor_version == 0);
+}
+
+
+
+
+MAX_PATH :: 260;
+
+File_Attribute :: enum {
+	Archive,
+	Compressed,
+	Encrypted,
+	Directory,
+	Indexed,
+	Offline,
+	Read_Only,
+	Symbolic_Link,
+	Sparse,
+	System,
+	Temporary,
+}
+
+@private
+map_windows_attribute_to_portable :: proc(attribs: win32.File_Attribute) -> (res: bit_set[File_Attribute]) {
+	using win32.File_Attribute;
+
+	// NOTE: only translate portable attributes
+	// Should we actually translate non-portable ones too?
+
+	if attribs & Archive != nil do res |= {.Archive};
+	if attribs & Compressed != nil do res |= {.Compressed};
+	if attribs & Encrypted != nil do res |= {.Encrypted};
+	if attribs & Directory != nil do res |= {.Directory};
+	if !(attribs & Content_Not_Indexed != nil) do res |= {.Indexed};
+	if attribs & Offline != nil do res |= {.Offline};
+	if attribs & Read_Only != nil do res |= {.Read_Only};
+	if attribs & Symbolic_Link != nil do res |= {.Symbolic_Link};
+	if attribs & Sparse != nil do res |= {.Sparse};
+	if attribs & System != nil do res |= {.System};
+	if attribs & Temporary != nil do res |= {.Temporary};
+
+	return;
+}
+
+File_Info :: struct {
+	attributes: bit_set[File_Attribute],
+
+	// NOTE: these times may be out of sync with reality depending on how
+	// the filesystem works.
+	// e.g: NTFS may delay updates to these for up to an hour.
+	created: File_Time,
+	last_accessed: File_Time,
+	last_written: File_Time,
+
+	size: i64,
+	name: string,
+}
+
+// TODO: This current requires deleting afterwards
+// Should we have a more iterator-like interface instead?
+Dir_Entries :: struct {
+	entries: []File_Info,
+	arena: mem.Dynamic_Arena, // we need this because we clone the file name
+}
+
+destroy_entries :: proc(de: ^Dir_Entries) {
+	mem.dynamic_arena_destroy(&de.arena);
+}
+
+get_directory_entries :: proc(path: string) -> (Dir_Entries, Errno) {
+	s := path;
+	if !strings.has_suffix(s, "*") {
+		s = strings.concatenate([]string{path, "\\*"}, context.temp_allocator);
+	}
+	path_cstr := strings.clone_to_cstring(s);
+
+
+	data: win32.FINDDATA_A;
+	dir := win32.FindFirstFileA(path_cstr, &data);
+	if dir == win32.Handle(INVALID_HANDLE) do return {}, Errno(win32.get_last_error());
+	defer win32.FindClose(dir);
+
+	arena: mem.Dynamic_Arena;
+	mem.dynamic_arena_init(&arena);
+	context.allocator = mem.dynamic_arena_allocator(&arena);
+
+	entries := make([dynamic]File_Info);
+
+	for {
+		inf: File_Info;
+		inf.name = strings.clone(string(cstring(&data.cFileName[0])));
+		inf.attributes = map_windows_attribute_to_portable(data.dwFileAttributes);
+		inf.size = i64((cast(^u64be) &data.nFileSizeHigh)^); // FIXME: This is wrong!
+		inf.created = File_Time(u64(data.ftCreationTime.value));
+		inf.last_accessed = File_Time(u64(data.ftLastAccessTime.value));
+		inf.last_written =  File_Time(u64(data.ftLastWriteTime.value));
+
+		if inf.name != "." && inf.name != ".." do append(&entries, inf);
+
+		if win32.FindNextFileA(dir, &data) == 0 do break;
+	}
+
+	return { entries = entries[:], arena = arena }, ERROR_NONE;
 }

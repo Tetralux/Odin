@@ -268,3 +268,57 @@ IDC_SIZENWSE    := cstring(_IDC_SIZENWSE);
 IDC_SIZEWE      := cstring(_IDC_SIZEWE);
 IDC_UPARROW     := cstring(_IDC_UPARROW);
 IDC_WAIT        := cstring(_IDC_WAIT);
+
+
+
+@(default_calling_convention="std")
+foreign user32 {
+	FindFirstFileA :: proc(cstring, ^FINDDATA_A) -> Handle ---;
+	FindNextFileA  :: proc(Handle, ^FINDDATA_A) -> i32 ---;
+	FindClose      :: proc(Handle) -> i32 ---;
+}
+
+File_Attribute :: enum u32 {
+	Archive = 0x20,
+	Compressed = 0x800,
+	Directory = 0x10,
+	Encrypted = 0x4000,
+	Hidden = 0x2,
+	Integrity = 0x8000,
+	Normal = 0x80,
+	Content_Not_Indexed = 0x2000,
+	No_Scrub_Data = 0x20000,
+	Offline = 0x1000,
+	Read_Only = 0x1,
+	Recall_On_Access = 0x400000,
+	Recall_On_Open = 0x40000,
+	Symbolic_Link = 0x400, // Reparse Point
+	Sparse = 0x200,
+	System = 0x4,
+	Temporary = 0x100,
+}
+
+// NOTE: without this alignment, FINDDATA_A has incorrect layout
+FILETIME :: struct #raw_union #align 4 {
+	using _: struct {
+		low: u32,
+		high: u32,
+	},
+	value: u64be,
+}
+
+FINDDATA_A :: struct {
+	dwFileAttributes: File_Attribute,
+	ftCreationTime:   FILETIME,
+	ftLastAccessTime: FILETIME,
+	ftLastWriteTime:  FILETIME,
+	nFileSizeHigh: 	u32,
+	nFileSizeLow: 	u32,
+	_: u32,
+	_: u32,
+	cFileName: [MAX_PATH]byte,
+	cAlternateFileName: [14]byte, // ancient-style truncated filename
+	dwFileType: u32,
+	dwCreatorType: u32,
+	wFinderFlags: u16,
+};
