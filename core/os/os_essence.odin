@@ -2399,6 +2399,7 @@ ERROR_UNSUPPORTED :: 1;
 read :: proc(fd: Handle, data: []byte) -> (int, Errno) {
 	return -1, ERROR_UNSUPPORTED;
 }
+read_some :: read;
 
 write :: proc(fd: Handle, data: []byte) -> (int, Errno) {
 	if (fd == stdout) {

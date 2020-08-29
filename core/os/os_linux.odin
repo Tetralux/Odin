@@ -320,6 +320,7 @@ read :: proc(fd: Handle, data: []byte) -> (int, Errno) {
 	}
 	return int(bytes_read), ERROR_NONE;
 }
+read_some :: read;
 
 write :: proc(fd: Handle, data: []byte) -> (int, Errno) {
 	if len(data) == 0 {

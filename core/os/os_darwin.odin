@@ -332,6 +332,7 @@ read :: proc(fd: Handle, data: []u8) -> (int, Errno) {
 	}
 	return bytes_read, 0;
 }
+read_some :: read;
 
 seek :: proc(fd: Handle, offset: i64, whence: int) -> (i64, Errno) {
 	assert(fd != -1);
