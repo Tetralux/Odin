@@ -121,6 +121,59 @@ write_entire_file :: proc(name: string, data: []byte, truncate := true) -> (succ
 	return write_err == 0;
 }
 
+
+// Reads from a handle into a buffer, returns the number of bytes up to and including a delimeter, and the total number of bytes read.
+// `n` will be -1 if the delimiter was not found.
+// Reads a maximum of `len(buf)` bytes.
+//
+// For an example of how to use this procedure to _keep reading_ until the delimeter is found,
+// see the body of `read_until_alloc`.
+read_until_into_slice :: proc(fd: Handle, buf: []byte, delim: byte) -> (n: int, total_read: int, err: Errno) {
+	n = -1;
+
+	outer: for {
+		read_so_far := total_read;
+
+		num_read, err := read_some(fd, buf[read_so_far:]);
+		total_read += num_read;
+
+		for b, i in buf[read_so_far:][:num_read] {
+			if b == delim {
+				n = read_so_far + i + 1;
+				break outer;
+			}
+		}
+
+		if total_read == len(buf) do break;
+	}
+	return;
+}
+
+// Reads from a handle, up to and including a delimeter.
+read_until_alloc :: proc(fd: Handle, delim: byte, allocator := context.allocator) -> ([]byte, Errno) {
+	buf := make([dynamic]byte, allocator);
+	for {
+		tmp: [1024]byte = ---;
+		n, total, err := read_until(fd, tmp[:], delim);
+		if err != ERROR_NONE {
+			return buf[:], err;
+		}
+
+		if n >= 0 {
+			s := tmp[:n];
+			append(&buf, ..s);
+			break;
+		} else {
+			s := tmp[:total];
+			append(&buf, ..s);
+		}
+	}
+	return buf[:], ERROR_NONE;
+}
+
+read_until :: proc{read_until_into_slice, read_until_alloc};
+
+
 write_ptr :: proc(fd: Handle, data: rawptr, len: int) -> (int, Errno) {
 	s := transmute([]byte)mem.Raw_Slice{data, len};
 	return write(fd, s);
