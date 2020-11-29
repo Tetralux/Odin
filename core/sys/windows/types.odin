@@ -673,7 +673,7 @@ in6_addr :: struct {
 	s6_addr: [16]u8,
 }
 
-DNS_STATUS :: distinct DWORD; // zero is success
+DNS_STATUS :: DWORD; // zero is success
 
 DNS_TYPE_A     :: 0x1;
 DNS_TYPE_NS    :: 0x2;
@@ -684,8 +684,6 @@ DNS_TYPE_TEXT  :: 0x10;
 
 DNS_INFO_NO_RECORDS :: 9501;
 DNS_QUERY_NO_RECURSION :: 0x00000004;
-
-ERROR_INVALID_NAME :: 123;
 
 DNS_RECORD :: struct {
     pNext: ^DNS_RECORD,
@@ -832,17 +830,17 @@ SYSTEM_INFO :: struct {
 
 // https://docs.microsoft.com/en-us/windows-hardware/drivers/ddi/wdm/ns-wdm-_osversioninfoexw
 OSVERSIONINFOEXW :: struct {
-    dwOSVersionInfoSize: ULONG,
-    dwMajorVersion:      ULONG,
-    dwMinorVersion:      ULONG,
-    dwBuildNumber:       ULONG,
-    dwPlatformId:        ULONG,
-    szCSDVersion:        [128]WCHAR,
-    wServicePackMajor:   USHORT,
-    wServicePackMinor:   USHORT,
-    wSuiteMask:          USHORT,
-    wProductType:        UCHAR,
-    wReserved:           UCHAR,
+	dwOSVersionInfoSize: ULONG,
+	dwMajorVersion:      ULONG,
+	dwMinorVersion:      ULONG,
+	dwBuildNumber:       ULONG,
+	dwPlatformId:        ULONG,
+	szCSDVersion:        [128]WCHAR,
+	wServicePackMajor:   USHORT,
+	wServicePackMinor:   USHORT,
+	wSuiteMask:          USHORT,
+	wProductType:        UCHAR,
+	wReserved:           UCHAR,
 };
 
 // https://docs.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-quota_limits
