@@ -16,6 +16,10 @@ ifeq ($(OS), Darwin)
 endif
 ifeq ($(OS), Linux)
 	LLVM_CONFIG=llvm-config-11
+	LLVM_VERSION_DETECTED=$($(LLVM_CONFIG) --version))
+	ifneq ($(findstring "11", $(LLVM_VERSION_DETECTED)), "")
+		LLVM_CONFIG=llvm-config
+	endif
 
 	CFLAGS:=$(CFLAGS) $(shell $(LLVM_CONFIG) --cxxflags --ldflags)
 	LDFLAGS:=$(LDFLAGS) $(shell $(LLVM_CONFIG) --libs core native --system-libs)
