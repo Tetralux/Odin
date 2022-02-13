@@ -211,6 +211,25 @@ ERFKILL: 		Errno : 132	/* Operation not possible due to RF-kill */
 
 EHWPOISON: 		Errno : 133	/* Memory page has hardware error */
 
+
+AF_UNSPEC    :: 0
+AF_UNIX      :: 1
+AF_LOCAL     :: AF_UNIX
+AF_INET      :: 2
+AF_INET6     :: 10
+AF_PACKET    :: 17
+AF_BLUETOOTH :: 31
+
+SOCK_STREAM    :: 1
+SOCK_DGRAM     :: 2
+SOCK_RAW       :: 3
+SOCK_RDM       :: 4
+SOCK_SEQPACKET :: 5
+SOCK_PACKET    :: 10
+
+INADDR_ANY :: 0
+
+
 O_RDONLY   :: 0x00000
 O_WRONLY   :: 0x00001
 O_RDWR     :: 0x00002
@@ -540,7 +559,6 @@ _unix_sendto :: proc(sd: int, buf: rawptr, len: uint, flags: int, addr: rawptr, 
 _unix_shutdown :: proc(sd: int, how: int) -> int {
 	return int(intrinsics.syscall(unix.SYS_shutdown, uintptr(sd), uintptr(how)))
 }
-
 
 foreign libc {
 	@(link_name="__errno_location") __errno_location    :: proc() -> ^int ---
