@@ -97,7 +97,7 @@ dial_tcp :: proc(addr: Address, port: int) -> (skt: Tcp_Socket, err: Network_Err
 
 	sockaddr, addrsize := address_to_sockaddr(addr, port)
 	res := os.connect(os.Socket(skt), (^os.SOCKADDR)(&sockaddr))
-	if res < 0 {
+	if res != os.ERROR_NONE {
 		err = Dial_Error(res)
 		return
 	}
@@ -144,7 +144,7 @@ make_bound_udp_socket :: proc(bound_address: Address, port: int) -> (skt: Udp_So
 
 	sockaddr, addrsize := address_to_sockaddr(bound_address, port)
 	res := os.bind(os.Socket(skt), (^os.SOCKADDR)(&sockaddr))
-	if res < 0 {
+	if res != os.ERROR_NONE {
 		err = Bind_Error(res)
 		return
 	}
@@ -443,7 +443,7 @@ set_option :: proc(s: Any_Socket, option: Socket_Option, value: any) -> Network_
 
 	skt := any_socket_to_socket(s)
 	res := os.setsockopt(os.Socket(skt), int(level), int(option), ptr, len)
-	if res < 0 {
+	if res != os.ERROR_NONE {
 		return Socket_Option_Error(res)
 	}
 

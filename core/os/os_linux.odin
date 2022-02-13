@@ -742,7 +742,7 @@ socket :: proc(domain: int, type: int, protocol: int) -> (Socket, Errno) {
 
 bind :: proc(sd: Socket, addr: ^SOCKADDR) -> (Errno) {
 	result := _unix_bind(int(sd), addr, size_of(addr^))
-	if result != 0 {
+	if result < 0 {
 		return _get_errno(result)
 	}
 	return ERROR_NONE
@@ -750,7 +750,7 @@ bind :: proc(sd: Socket, addr: ^SOCKADDR) -> (Errno) {
 
 connect :: proc(sd: Socket, addr: ^SOCKADDR) -> (Errno) {
 	result := _unix_connect(int(sd), addr, size_of(addr^))
-	if result != 0 {
+	if result < 0 {
 		return _get_errno(result)
 	}
 	return ERROR_NONE
@@ -766,7 +766,7 @@ accept :: proc(sd: Socket, addr: ^SOCKADDR, len: rawptr) -> (Socket, Errno) {
 
 listen :: proc(sd: Socket, backlog: int) -> (Errno) {
 	result := _unix_listen(int(sd), backlog)
-	if result != 0 {
+	if result < 0 {
 		return _get_errno(result)
 	}
 	return ERROR_NONE
