@@ -19,7 +19,6 @@ socklen_t :: c.int
 
 INVALID_HANDLE :: ~Handle(0)
 
-SOL_SOCKET:   int : 0xffff
 
 AF_UNSPEC:    int : 0
 AF_UNIX:      int : 1
@@ -53,16 +52,17 @@ SHUT_RD:   int : 0
 SHUT_WR:   int : 1
 SHUT_RDWR: int : 2
 
-SO_DEBUG:     int : 0x0000
-SO_REUSEADDR: int : 0x0004
-SO_KEEPALIVE: int : 0x0008
-SO_DONTROUTE: int : 0x0010
-SO_BROADCAST: int : 0x0020
-SO_LINGER:    int : 0x0080
-SO_OOBINLINE: int : 0x0100
-SO_REUSEPORT: int : 0x0200
-SO_SNDBUF: 	  int : 0x1001
-SO_RCVBUF: 	  int : 0x1002
+SOL_SOCKET:   int : 1
+SO_DEBUG:     int : 1
+SO_REUSEADDR: int : 2
+SO_DONTROUTE: int : 5
+SO_BROADCAST: int : 6
+SO_SNDBUF:    int : 7
+SO_RCVBUF:    int : 8
+SO_KEEPALIVE: int : 9
+SO_OOBINLINE: int : 10
+SO_LINGER:    int : 13
+SO_REUSEPORT: int : 15
 SO_RCVTIMEO_NEW: int : 66
 SO_SNDTIMEO_NEW: int : 67
 
