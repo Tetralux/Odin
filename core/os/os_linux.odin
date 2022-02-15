@@ -19,10 +19,12 @@ socklen_t :: c.int
 
 INVALID_HANDLE :: ~Handle(0)
 
+
 AI_PASSIVE:     int : 0x00000001 // get address to use bind()
 AI_CANONNAME:   int : 0x00000002 // fill ai_canonname
 AI_NUMERICHOST: int : 0x00000004 // prevent name resolution
 AI_NUMERICSERV: int : 0x00000008 // don't use name resolution.
+
 
 AF_UNSPEC:    int : 0
 AF_UNIX:      int : 1
@@ -55,6 +57,7 @@ IPPROTO_RAW:      int : 255
 SHUT_RD:   int : 0
 SHUT_WR:   int : 1
 SHUT_RDWR: int : 2
+
 
 SOL_SOCKET:   int : 1
 SO_DEBUG:     int : 1
@@ -763,6 +766,7 @@ bind :: proc(sd: Socket, addr: ^SOCKADDR, len: socklen_t) -> (Errno) {
 	return ERROR_NONE
 }
 
+
 connect :: proc(sd: Socket, addr: ^SOCKADDR, len: socklen_t) -> (Errno) {
 	result := _unix_connect(int(sd), addr, len)
 	if result < 0 {
@@ -795,8 +799,9 @@ setsockopt :: proc(sd: Socket, level: int, optname: int, optval: rawptr, optlen:
 	return ERROR_NONE
 }
 
-recvfrom :: proc(sd: Socket, data: []byte, flags: int, addr: ^SOCKADDR, addrlen: ^socklen_t) -> (u32, Errno) {
-	result := _unix_recvfrom(int(sd), raw_data(data), len(data), flags, addr, uintptr(addrlen))
+
+recvfrom :: proc(sd: Socket, data: []byte, flags: int, addr: ^SOCKADDR, addr_size: ^socklen_t) -> (u32, Errno) {
+	result := _unix_recvfrom(int(sd), raw_data(data), len(data), flags, addr, uintptr(addr_size))
 	if result < 0 {
 		return 0, _get_errno(int(result))
 	}
@@ -810,6 +815,7 @@ recv :: proc(sd: Socket, data: []byte, flags: int) -> (u32, Errno) {
 	}
 	return u32(result), ERROR_NONE
 }
+
 
 sendto :: proc(sd: Socket, data: []u8, flags: int, addr: ^SOCKADDR, addrlen: socklen_t) -> (u32, Errno) {
 	result := _unix_sendto(int(sd), raw_data(data), len(data), flags, addr, addrlen)

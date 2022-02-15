@@ -28,7 +28,7 @@ Network_Error :: union {
 
 
 Create_Socket_Error :: enum c.int {
-	Offline = win.WSAENETDOWN,
+	Network_Subsystem_Failure = win.WSAENETDOWN,
 	Family_Not_Supported_For_This_Socket = win.WSAEAFNOSUPPORT,
 	No_Socket_Descriptors_Available = win.WSAEMFILE,
 	No_Buffer_Space_Available = win.WSAENOBUFS,
@@ -100,8 +100,8 @@ dial_tcp :: proc(addr: Address, port: int) -> (skt: Tcp_Socket, err: Network_Err
 	// use the same address immediately.
 	_ = set_option(skt, .Reuse_Address, true)
 
-	sockaddr, addrsize := address_to_sockaddr(addr, port)
-	res := win.connect(win.SOCKET(skt), (^win.SOCKADDR)(&sockaddr), addrsize)
+	sockaddr := endpoint_to_sockaddr({addr, port})
+	res := win.connect(win.SOCKET(skt), &sockaddr, size_of(sockaddr))
 	if res < 0 {
 		err = Dial_Error(win.WSAGetLastError())
 		return
@@ -109,19 +109,6 @@ dial_tcp :: proc(addr: Address, port: int) -> (skt: Tcp_Socket, err: Network_Err
 
 	return
 }
-
-
-
-// This type of socket becomes bound when you try to send data.
-// This is likely what you want if you want to send data unsolicited.
-//
-// This is like a client TCP socket, except that it can send data to any remote endpoint without needing to establish a connection first.
-make_unbound_udp_socket :: proc(family: Address_Family) -> (skt: Udp_Socket, err: Network_Error) {
-	sock := create_socket(family, .Udp) or_return
-	skt = sock.(Udp_Socket)
-	return
-}
-
 
 Bind_Error :: enum c.int {
 	// Another application is currently bound to this endpoint.
@@ -138,6 +125,27 @@ Bind_Error :: enum c.int {
 	No_Ports_Available = win.WSAENOBUFS,
 }
 
+bind :: proc(skt: Any_Socket, ep: Endpoint) -> (err: Network_Error) {
+	sockaddr := endpoint_to_sockaddr(ep)
+	s := any_socket_to_socket(skt)
+	res := win.bind(win.SOCKET(s), &sockaddr, size_of(sockaddr))
+	if res < 0 {
+		err = Bind_Error(win.WSAGetLastError())
+	}
+	return
+}
+
+
+// This type of socket becomes bound when you try to send data.
+// This is likely what you want if you want to send data unsolicited.
+//
+// This is like a client TCP socket, except that it can send data to any remote endpoint without needing to establish a connection first.
+make_unbound_udp_socket :: proc(family: Address_Family) -> (skt: Udp_Socket, err: Network_Error) {
+	sock := create_socket(family, .Udp) or_return
+	skt = sock.(Udp_Socket)
+	return
+}
+
 // This type of socket is bound immediately, which enables it to receive data on the port.
 // Since it's UDP, it's also able to send data without receiving any first.
 //
@@ -146,14 +154,7 @@ Bind_Error :: enum c.int {
 // The bound_address is the address of the network interface that you want to use, or a loopback address if you don't care which to use.
 make_bound_udp_socket :: proc(bound_address: Address, port: int) -> (skt: Udp_Socket, err: Network_Error) {
 	skt = make_unbound_udp_socket(family_from_address(bound_address)) or_return
-
-	sockaddr, addrsize := address_to_sockaddr(bound_address, port)
-	res := win.bind(win.SOCKET(skt), (^win.SOCKADDR)(&sockaddr), addrsize)
-	if res < 0 {
-		err = Bind_Error(win.WSAGetLastError())
-		return
-	}
-
+	bind(skt, {bound_address, port}) or_return
 	return
 }
 
@@ -180,14 +181,9 @@ listen_tcp :: proc(local_addr: Address, port: int, backlog := 1000) -> (skt: Tcp
 	// prevent hijacking of the server's endpoint by other applications.
 	set_option(skt, .Exclusive_Addr_Use, true) or_return
 
-	sockaddr, addrsize := address_to_sockaddr(local_addr, port)
-	res := win.bind(win.SOCKET(skt), cast(^win.SOCKADDR) &sockaddr, addrsize)
-	if res == win.SOCKET_ERROR {
-		err = Listen_Error(win.WSAGetLastError())
-		return
-	}
+	bind(sock, {local_addr, port}) or_return
 
-	res = win.listen(win.SOCKET(skt), i32(backlog))
+	res := win.listen(win.SOCKET(skt), i32(backlog))
 	if res == win.SOCKET_ERROR {
 		err = Listen_Error(win.WSAGetLastError())
 		return
@@ -211,29 +207,13 @@ Accept_Error :: enum c.int {
 accept_tcp :: proc(sock: Tcp_Socket) -> (client: Tcp_Socket, source: Endpoint, err: Network_Error) {
 	sockaddr: win.SOCKADDR_STORAGE_LH
 	sockaddrlen := c.int(size_of(sockaddr))
-	client_sock := win.accept(win.SOCKET(sock), cast(^win.SOCKADDR) &sockaddr, &sockaddrlen)
+	client_sock := win.accept(win.SOCKET(sock), &sockaddr, &sockaddrlen)
 	if int(client_sock) == win.SOCKET_ERROR {
 		err = Accept_Error(win.WSAGetLastError())
 		return
 	}
 	client = Tcp_Socket(client_sock)
-
-	source_address: Address
-	port: int
-	switch sockaddrlen {
-	case size_of(win.sockaddr_in):
-		p := cast(^win.sockaddr_in) &sockaddr
-		source_address = transmute(Ipv4_Address) p.sin_addr.s_addr
-		port = int(p.sin_port)
-	case size_of(win.sockaddr_in6):
-		p := cast(^win.sockaddr_in6) &sockaddr
-		source_address = transmute(Ipv6_Address) p.sin6_addr.s6_addr
-		port = int(p.sin6_port)
-	case:
-		unreachable()
-	}
-
-	source = { source_address, port }
+	source = sockaddr_to_endpoint(&sockaddr)
 	return
 }
 
@@ -247,16 +227,17 @@ close :: proc(skt: Any_Socket) {
 
 
 Tcp_Recv_Error :: enum c.int {
-	Shutdown = win.WSAESHUTDOWN,
+	Network_Subsystem_Failure = win.WSAENETDOWN,
 	Not_Connected = win.WSAENOTCONN,
-	Connection_Broken = win.WSAENETRESET,
+	Bad_Buffer = win.WSAEFAULT,
+	Keepalive_Failure = win.WSAENETRESET,
 	Not_Socket = win.WSAENOTSOCK,
-	Aborted = win.WSAECONNABORTED,
-	Reset = win.WSAECONNRESET, // Gracefully shutdown
-	Offline = win.WSAENETDOWN,
-	Host_Unreachable = win.WSAEHOSTUNREACH,
-	Interrupted = win.WSAEINTR,
+	Shutdown = win.WSAESHUTDOWN,
+	Would_Block = win.WSAEWOULDBLOCK,
+	Aborted = win.WSAECONNABORTED, // TODO: not functionally different from Reset; merge?
 	Timeout = win.WSAETIMEDOUT,
+	Reset = win.WSAECONNRESET, // Gracefully shutdown
+	Host_Unreachable = win.WSAEHOSTUNREACH, // TODO: verify can actually happen
 }
 
 recv_tcp :: proc(skt: Tcp_Socket, buf: []byte) -> (bytes_read: int, err: Network_Error) {
@@ -272,10 +253,29 @@ recv_tcp :: proc(skt: Tcp_Socket, buf: []byte) -> (bytes_read: int, err: Network
 }
 
 Udp_Recv_Error :: enum c.int {
+	Network_Subsystem_Failure = win.WSAENETDOWN,
+	Aborted = win.WSAECONNABORTED, // TODO: not functionally different from Reset; merge?
+	// UDP packets are limited in size, and the length of the incoming message exceeded it.
 	Truncated = win.WSAEMSGSIZE,
-	Reset = win.WSAECONNRESET,
+	// The machine at the remote endpoint doesn't have the given port open to receiving UDP data.
+	Remote_Not_Listening = win.WSAECONNRESET,
+	Shutdown = win.WSAESHUTDOWN,
+	// A broadcast address was specified, but the .Broadcast socket option isn't set.
+	Broadcast_Disabled = win.WSAEACCES,
+	Bad_Buffer = win.WSAEFAULT,
+	No_Buffer_Space_Available = win.WSAENOBUFS,
+	// The socket is not valid socket handle.
 	Not_Socket = win.WSAENOTSOCK,
-	Socket_Not_Bound = win.WSAEINVAL, // .. or unknown flag specified; or MSG_OOB specified with SO_OOBINLINE enabled
+	Would_Block = win.WSAEWOULDBLOCK,
+	// The remote host cannot be reached from this host at this time.
+	Host_Unreachable = win.WSAEHOSTUNREACH,
+	// The network cannot be reached from this host at this time.
+	Offline = win.WSAENETUNREACH,
+	Timeout = win.WSAETIMEDOUT,
+	// The socket isn't bound; an unknown flag specified; or MSG_OOB specified with SO_OOBINLINE enabled.
+	Incorrectly_Configured = win.WSAEINVAL, // TODO: can this actually happen?
+	// The message took more hops than was allowed (the Time To Live) to reach the remote endpoint.
+	TTL_Expired = win.WSAENETRESET,
 }
 
 recv_udp :: proc(skt: Udp_Socket, buf: []byte) -> (bytes_read: int, remote_endpoint: Endpoint, err: Network_Error) {
@@ -285,31 +285,40 @@ recv_udp :: proc(skt: Udp_Socket, buf: []byte) -> (bytes_read: int, remote_endpo
 
 	from: win.SOCKADDR_STORAGE_LH
 	fromsize := c.int(size_of(from))
-	res := win.recvfrom(win.SOCKET(skt), raw_data(buf), c.int(len(buf)), 0, cast(^win.SOCKADDR) &from, &fromsize)
+	res := win.recvfrom(win.SOCKET(skt), raw_data(buf), c.int(len(buf)), 0, &from, &fromsize)
 	if res < 0 {
 		err = Udp_Recv_Error(win.WSAGetLastError())
 		return
 	}
 
 	bytes_read = int(res)
-	remote_endpoint = sockaddr_to_endpoint(&from, fromsize)
+	remote_endpoint = sockaddr_to_endpoint(&from)
 	return
 }
 
 recv :: proc{recv_tcp, recv_udp}
 
 
+//
+// TODO: consider merging some errors to make handling them easier
+// TODO: verify once more what errors to actually expose
+//
 
 Tcp_Send_Error :: enum c.int {
-	Aborted = win.WSAECONNABORTED,
+	Aborted = win.WSAECONNABORTED, // TODO: not functionally different from Reset; merge?
 	Not_Connected = win.WSAENOTCONN,
 	Shutdown = win.WSAESHUTDOWN,
 	Reset = win.WSAECONNRESET,
 	No_Buffer_Space_Available = win.WSAENOBUFS,
-	Offline = win.WSAENETDOWN,
+	Network_Subsystem_Failure = win.WSAENETDOWN,
 	Host_Unreachable = win.WSAEHOSTUNREACH,
-	Interrupted = win.WSAEINTR,
+	Offline = win.WSAENETUNREACH, // TODO: verify possible, as not mentioned in docs
 	Timeout = win.WSAETIMEDOUT,
+	// A broadcast address was specified, but the .Broadcast socket option isn't set.
+	Broadcast_Disabled = win.WSAEACCES,
+	Bad_Buffer = win.WSAEFAULT,
+	// Connection is broken due to keepalive activity detecting a failure during the operation.
+	Keepalive_Failure = win.WSAENETRESET, // TODO: not functionally different from Reset; merge?
 }
 
 // Repeatedly sends data until the entire buffer is sent.
@@ -318,7 +327,8 @@ Tcp_Send_Error :: enum c.int {
 send_tcp :: proc(skt: Tcp_Socket, buf: []byte) -> (bytes_written: int, err: Network_Error) {
 	for bytes_written < len(buf) {
 		limit := min(1<<31, len(buf) - bytes_written)
-		res := win.send(win.SOCKET(skt), raw_data(buf), c.int(limit), 0)
+		remaining := buf[bytes_written:]
+		res := win.send(win.SOCKET(skt), raw_data(remaining), c.int(limit), 0)
 		if res < 0 {
 			err = Tcp_Send_Error(win.WSAGetLastError())
 			return
@@ -329,15 +339,42 @@ send_tcp :: proc(skt: Tcp_Socket, buf: []byte) -> (bytes_written: int, err: Netw
 }
 
 Udp_Send_Error :: enum c.int {
-	// TODO
-	Truncated = win.WSAEMSGSIZE,
+	Network_Subsystem_Failure = win.WSAENETDOWN,
+	Aborted = win.WSAECONNABORTED, // TODO: not functionally different from Reset; merge?
+	// UDP packets are limited in size, and len(buf) exceeded it.
+	Message_Too_Long = win.WSAEMSGSIZE,
+	// The machine at the remote endpoint doesn't have the given port open to receiving UDP data.
+	Remote_Not_Listening = win.WSAECONNRESET,
+	Shutdown = win.WSAESHUTDOWN,
+	// A broadcast address was specified, but the .Broadcast socket option isn't set.
+	Broadcast_Disabled = win.WSAEACCES,
+	Bad_Buffer = win.WSAEFAULT,
+	// Connection is broken due to keepalive activity detecting a failure during the operation.
+	Keepalive_Failure = win.WSAENETRESET, // TODO: not functionally different from Reset; merge?
+	No_Buffer_Space_Available = win.WSAENOBUFS,
+	// The socket is not valid socket handle.
+	Not_Socket = win.WSAENOTSOCK,
+	// This socket is unidirectional and cannot be used to send any data.
+	// TODO: verify possible; decide whether to keep if not
+	Receive_Only = win.WSAEOPNOTSUPP,
+	Would_Block = win.WSAEWOULDBLOCK,
+	// The remote host cannot be reached from this host at this time.
+	Host_Unreachable = win.WSAEHOSTUNREACH,
+	// Attempt to send to the Any address.
+	Cannot_Use_Any_Address = win.WSAEADDRNOTAVAIL,
+	// The address is of an incorrect address family for this socket.
+	Family_Not_Supported_For_This_Socket = win.WSAEAFNOSUPPORT,
+	// The network cannot be reached from this host at this time.
+	Offline = win.WSAENETUNREACH,
+	Timeout = win.WSAETIMEDOUT,
 }
 
 send_udp :: proc(skt: Udp_Socket, buf: []byte, to: Endpoint) -> (bytes_written: int, err: Network_Error) {
-	toaddr, toaddrsize := address_to_sockaddr(to.address, to.port)
+	toaddr := endpoint_to_sockaddr(to)
 	for bytes_written < len(buf) {
 		limit := min(1<<31, len(buf) - bytes_written)
-		res := win.sendto(win.SOCKET(skt), raw_data(buf), c.int(limit), 0, cast(^win.SOCKADDR) &toaddr, toaddrsize)
+		remaining := buf[bytes_written:]
+		res := win.sendto(win.SOCKET(skt), raw_data(remaining), c.int(limit), 0, &toaddr, size_of(toaddr))
 		if res < 0 {
 			err = Udp_Send_Error(win.WSAGetLastError())
 			return
@@ -407,28 +444,29 @@ Socket_Option :: enum c.int {
 	Send_Buffer_Size = win.SO_SNDBUF,
 	// win.DWORD: For blocking sockets, the time in milliseconds to wait for incoming data to be received, before giving up and returning .Timeout.
 	//            For non-blocking sockets, ignored.
-	// TODO: verify that value of zero waits forever
+	//            Use a value of zero to potentially wait forever.
 	Receive_Timeout = win.SO_RCVTIMEO,
 	// win.DWORD: For blocking sockets, the time in milliseconds to wait for outgoing data to be sent, before giving up and returning .Timeout.
 	//            For non-blocking sockets, ignored.
-	// TODO: verify that value of zero waits forever
+	//            Use a value of zero to potentially wait forever.
 	Send_Timeout = win.SO_SNDTIMEO,
+	// bool: Allow sending to, receiving from, and binding to, a broadcast address.
+	Broadcast = win.SO_BROADCAST,
 }
 
 Socket_Option_Error :: enum c.int {
 	// The value is not of the correct type for the given socket option.
-	Incorrect_Type,
+	Incorrect_Value_Type,
 	// The given socket option is unrecognised.
 	Unknown_Option,
 
-	Offline = win.WSAENETDOWN,
+	Network_Subsystem_Failure = win.WSAENETDOWN,
 	Timeout_When_Keepalive_Set = win.WSAENETRESET,
 	Invalid_Option_For_Socket = win.WSAENOPROTOOPT,
 	Reset_When_Keepalive_Set = win.WSAENOTCONN,
 	Not_Socket = win.WSAENOTSOCK,
 }
 
-// Socket must be bound.
 set_option :: proc(s: Any_Socket, option: Socket_Option, value: any) -> Network_Error {
 	level := win.SOL_SOCKET if option != .Tcp_Nodelay else win.IPPROTO_TCP
 
@@ -440,12 +478,13 @@ set_option :: proc(s: Any_Socket, option: Socket_Option, value: any) -> Network_
 		.Conditional_Accept,
 		.Dont_Linger,
 		.Out_Of_Bounds_Data_Inline,
-		.Tcp_Nodelay:
+		.Tcp_Nodelay,
+		.Broadcast:
 			switch in value {
 			case bool:
 				// okay
 			case:
-				return .Incorrect_Type
+				return .Incorrect_Value_Type
 			}
 	case
 		.Receive_Buffer_Size,
@@ -453,17 +492,17 @@ set_option :: proc(s: Any_Socket, option: Socket_Option, value: any) -> Network_
 		.Receive_Timeout,
 		.Send_Timeout:
 			switch in value {
-			case win.DWORD:
+			case int:
 				// okay
 			case:
-				return .Incorrect_Type
+				return .Incorrect_Value_Type
 			}
 	case .Linger:
 		switch in value {
 		case win.LINGER:
 			// okay
 		case:
-			return .Incorrect_Type
+			return .Incorrect_Value_Type
 		}
 	case:
 		return .Unknown_Option

@@ -9,35 +9,37 @@ get_network_interfaces :: proc() -> []Address {
 }
 
 @private
-address_to_sockaddr :: proc(addr: Address, port: int) -> (sockaddr: union{win.sockaddr_in, win.sockaddr_in6}, addrsize: i32) {
-	switch a in addr {
+endpoint_to_sockaddr :: proc(ep: Endpoint) -> (sockaddr: win.SOCKADDR_STORAGE_LH) {
+	switch a in ep.address {
 	case Ipv4_Address:
-		return win.sockaddr_in {
-			sin_port = u16be(win.USHORT(port)),
+		(^win.sockaddr_in)(&sockaddr)^ = win.sockaddr_in {
+			sin_port = u16be(win.USHORT(ep.port)),
 			sin_addr = transmute(win.in_addr) a,
 			sin_family = u16(win.AF_INET),
-		}, size_of(win.sockaddr_in)
+		}
+		return
 	case Ipv6_Address:
-		return win.sockaddr_in6 {
-			sin6_port = u16be(win.USHORT(port)),
+		(^win.sockaddr_in6)(&sockaddr)^ = win.sockaddr_in6 {
+			sin6_port = u16be(win.USHORT(ep.port)),
 			sin6_addr = transmute(win.in6_addr) a,
 			sin6_family = u16(win.AF_INET6),
-		}, size_of(win.sockaddr_in6)
+		}
+		return
 	}
 	unreachable()
 }
 
 @private
-sockaddr_to_endpoint :: proc(native_addr: ^win.SOCKADDR_STORAGE_LH, auto_cast addr_size: int) -> (ep: Endpoint) {
-	switch addr_size {
-	case size_of(win.sockaddr_in):
+sockaddr_to_endpoint :: proc(native_addr: ^win.SOCKADDR_STORAGE_LH) -> (ep: Endpoint) {
+	switch native_addr.ss_family {
+	case u16(win.AF_INET):
 		addr := cast(^win.sockaddr_in) native_addr
 		port := int(addr.sin_port)
 		ep = Endpoint {
 			address = Ipv4_Address(transmute([4]byte) addr.sin_addr),
 			port = port,
 		}
-	case size_of(win.sockaddr_in6):
+	case u16(win.AF_INET6):
 		addr := cast(^win.sockaddr_in6) native_addr
 		port := int(addr.sin6_port)
 		ep = Endpoint {
@@ -45,7 +47,7 @@ sockaddr_to_endpoint :: proc(native_addr: ^win.SOCKADDR_STORAGE_LH, auto_cast ad
 			port = port,
 		}
 	case:
-		panic("addr_size must be size_of(sockaddr_in) or size_of(sockaddr_in6)")
+		panic("native_addr is neither IPv4 or IPv6 address")
 	}
 	return
 }

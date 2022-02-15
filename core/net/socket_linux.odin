@@ -95,25 +95,13 @@ dial_tcp :: proc(addr: Address, port: int) -> (skt: Tcp_Socket, err: Network_Err
 	// use the same address immediately.
 	_ = set_option(skt, .Reuse_Address, true)
 
-	sockaddr, addrsize := address_to_sockaddr(addr, port)
-	res := os.connect(os.Socket(skt), (^os.SOCKADDR)(&sockaddr), addrsize)
+	sockaddr := endpoint_to_sockaddr({addr, port})
+	res := os.connect(os.Socket(skt), (^os.SOCKADDR)(&sockaddr), size_of(sockaddr))
 	if res != os.ERROR_NONE {
 		err = Dial_Error(res)
 		return
 	}
 
-	return
-}
-
-
-
-// This type of socket becomes bound when you try to send data.
-// This is likely what you want if you want to send data unsolicited.
-//
-// This is like a client TCP socket, except that it can send data to any remote endpoint without needing to establish a connection first.
-make_unbound_udp_socket :: proc(family: Address_Family) -> (skt: Udp_Socket, err: Network_Error) {
-	sock := create_socket(family, .Udp) or_return
-	skt = sock.(Udp_Socket)
 	return
 }
 
@@ -133,6 +121,27 @@ Bind_Error :: enum c.int {
 	No_Ports_Available = c.int(os.ENOBUFS),
 }
 
+bind :: proc(skt: Any_Socket, ep: Endpoint) -> (err: Network_Error) {
+	sockaddr := endpoint_to_sockaddr(ep)
+	s := any_socket_to_socket(skt)
+	res := os.bind(os.Socket(s), (^os.SOCKADDR)(&sockaddr), size_of(sockaddr))
+	if res != os.ERROR_NONE {
+		err = Bind_Error(res)
+	}
+	return
+}
+
+
+// This type of socket becomes bound when you try to send data.
+// This is likely what you want if you want to send data unsolicited.
+//
+// This is like a client TCP socket, except that it can send data to any remote endpoint without needing to establish a connection first.
+make_unbound_udp_socket :: proc(family: Address_Family) -> (skt: Udp_Socket, err: Network_Error) {
+	sock := create_socket(family, .Udp) or_return
+	skt = sock.(Udp_Socket)
+	return
+}
+
 // This type of socket is bound immediately, which enables it to receive data on the port.
 // Since it's UDP, it's also able to send data without receiving any first.
 //
@@ -141,14 +150,7 @@ Bind_Error :: enum c.int {
 // The bound_address is the address of the network interface that you want to use, or a loopback address if you don't care which to use.
 make_bound_udp_socket :: proc(bound_address: Address, port: int) -> (skt: Udp_Socket, err: Network_Error) {
 	skt = make_unbound_udp_socket(family_from_address(bound_address)) or_return
-
-	sockaddr, addrsize := address_to_sockaddr(bound_address, port)
-	res := os.bind(os.Socket(skt), (^os.SOCKADDR)(&sockaddr), addrsize)
-	if res != os.ERROR_NONE {
-		err = Bind_Error(res)
-		return
-	}
-
+	bind(skt, {bound_address, port}) or_return
 	return
 }
 
@@ -171,14 +173,9 @@ listen_tcp :: proc(local_addr: Address, port: int, backlog := 1000) -> (skt: Tcp
 	sock := create_socket(family, .Tcp) or_return
 	skt = sock.(Tcp_Socket)
 
-	sockaddr, addrsize := address_to_sockaddr(local_addr, port)
-	res := os.bind(os.Socket(skt), cast(^os.SOCKADDR)&sockaddr, addrsize)
-	if res != os.ERROR_NONE {
-		err = Listen_Error(res)
-		return
-	}
+	bind(sock, {local_addr, port}) or_return
 
-	res = os.listen(os.Socket(skt), backlog)
+	res := os.listen(os.Socket(skt), backlog)
 	if res != os.ERROR_NONE {
 		err = Listen_Error(res)
 		return
@@ -209,23 +206,7 @@ accept_tcp :: proc(sock: Tcp_Socket) -> (client: Tcp_Socket, source: Endpoint, e
 		return
 	}
 	client = Tcp_Socket(client_sock)
-
-	source_address: Address
-	port: int
-	switch sockaddrlen {
-	case size_of(os.sockaddr_in):
-		p := cast(^os.sockaddr_in) &sockaddr
-		source_address = transmute(Ipv4_Address) p.sin_addr.s_addr
-		port = int(p.sin_port)
-	case size_of(os.sockaddr_in6):
-		p := cast(^os.sockaddr_in6) &sockaddr
-		source_address = transmute(Ipv6_Address) p.sin6_addr.s6_addr
-		port = int(p.sin6_port)
-	case:
-		unreachable()
-	}
-
-	source = { source_address, port }
+	source = sockaddr_to_endpoint(&sockaddr)
 	return
 }
 
@@ -239,7 +220,6 @@ close :: proc(skt: Any_Socket) {
 
 
 Tcp_Recv_Error :: enum c.int {
-	Ok = 0,
 	Shutdown = c.int(os.ESHUTDOWN),
 	Not_Connected = c.int(os.ENOTCONN),
 	Connection_Broken = c.int(os.ENETRESET),
@@ -265,7 +245,6 @@ recv_tcp :: proc(skt: Tcp_Socket, buf: []byte) -> (bytes_read: int, err: Network
 }
 
 Udp_Recv_Error :: enum c.int {
-	Ok = 0,
 	Truncated = c.int(os.EMSGSIZE),
 	Reset = c.int(os.ECONNRESET),
 	Not_Socket = c.int(os.ENOTSOCK),
@@ -286,7 +265,7 @@ recv_udp :: proc(skt: Udp_Socket, buf: []byte) -> (bytes_read: int, remote_endpo
 	}
 
 	bytes_read = int(res)
-	remote_endpoint = sockaddr_to_endpoint(&from, fromsize)
+	remote_endpoint = sockaddr_to_endpoint(&from)
 	return
 }
 
@@ -295,7 +274,6 @@ recv :: proc{recv_tcp, recv_udp}
 
 
 Tcp_Send_Error :: enum c.int {
-	Ok = 0,
 	Aborted = c.int(os.ECONNABORTED),
 	Not_Connected = c.int(os.ENOTCONN),
 	Shutdown = c.int(os.ESHUTDOWN),
@@ -313,7 +291,8 @@ Tcp_Send_Error :: enum c.int {
 send_tcp :: proc(skt: Tcp_Socket, buf: []byte) -> (bytes_written: int, err: Network_Error) {
 	for bytes_written < len(buf) {
 		limit := min(1<<31, len(buf) - bytes_written)
-		res, ok := os.send(os.Socket(skt), buf, 0)
+		remaining := buf[bytes_written:][:limit]
+		res, ok := os.send(os.Socket(skt), remaining, 0)
 		if ok != os.ERROR_NONE {
 			err = Tcp_Send_Error(ok)
 			return
@@ -324,15 +303,15 @@ send_tcp :: proc(skt: Tcp_Socket, buf: []byte) -> (bytes_written: int, err: Netw
 }
 
 Udp_Send_Error :: enum c.int {
-	Ok = 0,
 	Truncated = c.int(os.EMSGSIZE),
 }
 
 send_udp :: proc(skt: Udp_Socket, buf: []byte, to: Endpoint) -> (bytes_written: int, err: Network_Error) {
-	toaddr, toaddrsize := address_to_sockaddr(to.address, to.port)
+	toaddr := endpoint_to_sockaddr(to)
 	for bytes_written < len(buf) {
 		limit := min(1<<31, len(buf) - bytes_written)
-		res, ok := os.sendto(os.Socket(skt), buf, 0, cast(^os.SOCKADDR) &toaddr, toaddrsize)
+		remaining := buf[bytes_written:][:limit]
+		res, ok := os.sendto(os.Socket(skt), remaining, 0, cast(^os.SOCKADDR) &toaddr, size_of(toaddr))
 		if ok != os.ERROR_NONE {
 			err = Udp_Send_Error(ok)
 			return
@@ -389,7 +368,7 @@ Socket_Option :: enum c.int {
 }
 
 Socket_Option_Error :: enum c.int {
-	Incorrect_Type,
+	Incorrect_Value_Type,
 	Unknown_Option,
 
 	Offline = c.int(os.ENETDOWN),
@@ -413,7 +392,7 @@ set_option :: proc(s: Any_Socket, option: Socket_Option, value: any) -> Network_
 			case bool:
 				// okay
 			case:
-				return .Incorrect_Type
+				return .Incorrect_Value_Type
 			}
 	case
 		.Receive_Buffer_Size,
@@ -424,14 +403,14 @@ set_option :: proc(s: Any_Socket, option: Socket_Option, value: any) -> Network_
 			case os.Timeval:
 				// okay
 			case:
-				return .Incorrect_Type
+				return .Incorrect_Value_Type
 			}
 	case .Linger:
 		switch in value {
 		case os.Linger:
 			// okay
 		case:
-			return .Incorrect_Type
+			return .Incorrect_Value_Type
 		}
 	case:
 		return .Unknown_Option
