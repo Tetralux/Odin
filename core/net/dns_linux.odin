@@ -8,7 +8,7 @@ import "core:os"
 import "core:fmt"
 
 /*
-	TODO(cloin): Does the DNS Resolver needs to recursively hop through CNAMEs to get the IP
+	TODO(cloin): Does the DNS Resolver need to recursively hop through CNAMEs to get the IP
 	or is that what recursion desired does? Do we need to handle recursion unavailable?
 	How do we deal with is_authoritative / is_truncated?
 
