@@ -20,6 +20,11 @@ import "core:fmt"
 	forever on networks with bad nameservers / no internet
 
 	TODO(cloin): Does decode_hostname *have* to be that gross?
+
+	TODO(cloin): Short circuit hostname lookup if the hostname is an IP?
+
+	TODO(cloin): Hostnames should be validated, they can't contain certain characters, need to look
+	at the RFCs so sort it all out
 */
 
 
