@@ -167,7 +167,7 @@ _decode_hostname :: proc(packet: []u8, start_idx: int, allocator := context.allo
 }
 
 @private
-_parse_record :: proc(packet: []u8, cur_off: ^int) -> (record: Dns_Record, ok: bool) {
+_parse_record :: proc(packet: []u8, cur_off: ^int, filter: Dns_Record_Type = nil) -> (record: Dns_Record, ok: bool) {
 	record_buf := packet[cur_off^:]
 
 	hostname, hn_sz := _decode_hostname(packet, cur_off^) or_return
@@ -184,6 +184,11 @@ _parse_record :: proc(packet: []u8, cur_off: ^int) -> (record: Dns_Record, ok: b
 	data_off := cur_off^ + int(hn_sz) + int(ahdr_sz);
 	data := packet[data_off:data_off+int(data_sz)]
 	cur_off^ += int(hn_sz) + int(ahdr_sz) + int(data_sz)
+
+	// nil == aggregate *everything*
+	if filter != nil && u16be(filter) != record_hdr.type {
+		return nil, true
+	}
 
 	_record: Dns_Record
 	#partial switch Dns_Record_Type(record_hdr.type) {
@@ -203,6 +208,9 @@ _parse_record :: proc(packet: []u8, cur_off: ^int) -> (record: Dns_Record, ok: b
 			addr_val: u128be = mem.slice_data_cast([]u128be, data)[0]
 			addr := Ipv6_Address(transmute([8]u16be)addr_val)
 			_record = Dns_Record_Ipv6(addr)
+		case .Cname:
+			hostname, _ := _decode_hostname(packet, data_off) or_return
+			_record = Dns_Record_Cname(hostname)
 		case:
 			fmt.printf("ignoring %d\n", record_hdr.type)
 			return
@@ -213,7 +221,7 @@ _parse_record :: proc(packet: []u8, cur_off: ^int) -> (record: Dns_Record, ok: b
 }
 
 @private
-_parse_response :: proc(response: []u8, allocator := context.allocator) -> (records: [dynamic]Dns_Record, ok: bool) {
+_parse_response :: proc(response: []u8, filter: Dns_Record_Type = nil, allocator := context.allocator) -> (records: [dynamic]Dns_Record, ok: bool) {
 	header_size_bytes :: 12
 	if len(response) < header_size_bytes {
 		return
@@ -254,7 +262,11 @@ _parse_response :: proc(response: []u8, allocator := context.allocator) -> (reco
 			continue
 		}
 
-		rec := _parse_record(response, &cur_idx) or_return
+		rec := _parse_record(response, &cur_idx, filter) or_return
+		if rec == nil {
+			continue
+		}
+
 		append(&_records, rec)
 	}
 	for i := 0; i < authority_count; i += 1 {
@@ -262,7 +274,11 @@ _parse_response :: proc(response: []u8, allocator := context.allocator) -> (reco
 			continue
 		}
 
-		rec := _parse_record(response, &cur_idx) or_return
+		rec := _parse_record(response, &cur_idx, filter) or_return
+		if rec == nil {
+			continue
+		}
+
 		append(&_records, rec)
 	}
 	for i := 0; i < additional_count; i += 1 {
@@ -270,7 +286,11 @@ _parse_response :: proc(response: []u8, allocator := context.allocator) -> (reco
 			continue
 		}
 
-		rec := _parse_record(response, &cur_idx) or_return
+		rec := _parse_record(response, &cur_idx, filter) or_return
+		if rec == nil {
+			continue
+		}
+
 		append(&_records, rec)
 	}
 	
@@ -323,6 +343,7 @@ get_dns_records :: proc(hostname: string, type: Dns_Record_Type, allocator := co
 
 	dns_packet := transmute([]u8)strings.to_string(b)
 
+
 	dns_response_buf := [4096]u8{}
 	dns_response: []u8
 	for dns_server in dns_servers {
@@ -357,14 +378,16 @@ get_dns_records :: proc(hostname: string, type: Dns_Record_Type, allocator := co
 			continue
 		}
 
-		rsp, _ok := _parse_response(dns_response)
+		rsp, _ok := _parse_response(dns_response, type)
 		if !_ok {
 			return
 		}
 
-		if len(rsp) > 0 {
-			return rsp[:], true
+		if len(rsp) == 0 {
+			continue
 		}
+
+		return rsp[:], true
 	}
 
 	return
