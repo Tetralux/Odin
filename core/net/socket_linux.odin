@@ -96,7 +96,7 @@ dial_tcp :: proc(addr: Address, port: int) -> (skt: Tcp_Socket, err: Network_Err
 	_ = set_option(skt, .Reuse_Address, true)
 
 	sockaddr, addrsize := address_to_sockaddr(addr, port)
-	res := os.connect(os.Socket(skt), (^os.SOCKADDR)(&sockaddr))
+	res := os.connect(os.Socket(skt), (^os.SOCKADDR)(&sockaddr), addrsize)
 	if res != os.ERROR_NONE {
 		err = Dial_Error(res)
 		return
@@ -143,7 +143,7 @@ make_bound_udp_socket :: proc(bound_address: Address, port: int) -> (skt: Udp_So
 	skt = make_unbound_udp_socket(family_from_address(bound_address)) or_return
 
 	sockaddr, addrsize := address_to_sockaddr(bound_address, port)
-	res := os.bind(os.Socket(skt), (^os.SOCKADDR)(&sockaddr))
+	res := os.bind(os.Socket(skt), (^os.SOCKADDR)(&sockaddr), addrsize)
 	if res != os.ERROR_NONE {
 		err = Bind_Error(res)
 		return
@@ -172,7 +172,7 @@ listen_tcp :: proc(local_addr: Address, port: int, backlog := 1000) -> (skt: Tcp
 	skt = sock.(Tcp_Socket)
 
 	sockaddr, addrsize := address_to_sockaddr(local_addr, port)
-	res := os.bind(os.Socket(skt), cast(^os.SOCKADDR)&sockaddr)
+	res := os.bind(os.Socket(skt), cast(^os.SOCKADDR)&sockaddr, addrsize)
 	if res != os.ERROR_NONE {
 		err = Listen_Error(res)
 		return
@@ -279,7 +279,7 @@ recv_udp :: proc(skt: Udp_Socket, buf: []byte) -> (bytes_read: int, remote_endpo
 
 	from: os.SOCKADDR_STORAGE_LH
 	fromsize := c.int(size_of(from))
-	res, ok := os.recvfrom(os.Socket(skt), buf, 0, cast(^os.SOCKADDR) &from)
+	res, ok := os.recvfrom(os.Socket(skt), buf, 0, cast(^os.SOCKADDR) &from, &fromsize)
 	if ok != os.ERROR_NONE {
 		err = Udp_Recv_Error(ok)
 		return
@@ -332,7 +332,7 @@ send_udp :: proc(skt: Udp_Socket, buf: []byte, to: Endpoint) -> (bytes_written: 
 	toaddr, toaddrsize := address_to_sockaddr(to.address, to.port)
 	for bytes_written < len(buf) {
 		limit := min(1<<31, len(buf) - bytes_written)
-		res, ok := os.sendto(os.Socket(skt), buf, 0, cast(^os.SOCKADDR) &toaddr)
+		res, ok := os.sendto(os.Socket(skt), buf, 0, cast(^os.SOCKADDR) &toaddr, toaddrsize)
 		if ok != os.ERROR_NONE {
 			err = Udp_Send_Error(ok)
 			return

@@ -19,6 +19,10 @@ socklen_t :: c.int
 
 INVALID_HANDLE :: ~Handle(0)
 
+AI_PASSIVE:     int : 0x00000001 // get address to use bind()
+AI_CANONNAME:   int : 0x00000002 // fill ai_canonname
+AI_NUMERICHOST: int : 0x00000004 // prevent name resolution
+AI_NUMERICSERV: int : 0x00000008 // don't use name resolution.
 
 AF_UNSPEC:    int : 0
 AF_UNIX:      int : 1
@@ -240,19 +244,19 @@ RTLD_BINDING_MASK :: 0x3
 RTLD_GLOBAL       :: 0x100
 
 ADDRESS_FAMILY :: u16
-SOCKADDR :: struct {
+SOCKADDR :: struct #packed {
 	sa_family: ADDRESS_FAMILY,
 	sa_data: [14]c.char,
 }
 
-SOCKADDR_STORAGE_LH :: struct {
+SOCKADDR_STORAGE_LH :: struct #packed {
 	ss_family: ADDRESS_FAMILY,
 	__ss_pad1: [6]c.char,
 	__ss_align: i64,
 	__ss_pad2: [112]c.char,
 }
 
-ADDRINFOA :: struct {
+ADDRINFOA :: struct #packed {
 	ai_flags: c.int,
 	ai_family: c.int,
 	ai_socktype: c.int,
@@ -263,14 +267,14 @@ ADDRINFOA :: struct {
 	ai_next: ^ADDRINFOA,
 }
 
-sockaddr_in :: struct {
+sockaddr_in :: struct #packed {
 	sin_family: ADDRESS_FAMILY,
 	sin_port: u16be,
 	sin_addr: in_addr,
 	sin_zero: [8]c.char,
 }
 
-sockaddr_in6 :: struct {
+sockaddr_in6 :: struct #packed {
 	sin6_family: ADDRESS_FAMILY,
 	sin6_port: u16be,
 	sin6_flowinfo: c.ulong,
@@ -278,12 +282,23 @@ sockaddr_in6 :: struct {
 	sin6_scope_id: c.ulong,
 }
 
-in_addr :: struct {
+in_addr :: struct #packed {
 	s_addr: u32,
 }
 
-in6_addr :: struct {
+in6_addr :: struct #packed {
 	s6_addr: [16]u8,
+}
+
+Addrinfo :: struct #packed {
+	flags: int,
+	family: int,
+	socktype: int,
+	protocol: int,
+	addrlen: socklen_t,
+	addr: ^SOCKADDR,
+	name: cstring,
+	next: ^Addrinfo,
 }
 
 // "Argv" arguments converted to Odin strings
@@ -533,7 +548,7 @@ _unix_recvfrom :: proc(sd: int, buf: rawptr, len: uint, flags: int, addr: rawptr
 	return i64(intrinsics.syscall(unix.SYS_recvfrom, uintptr(sd), uintptr(buf), uintptr(len), uintptr(flags), uintptr(addr), uintptr(alen)))
 }
 
-_unix_sendto :: proc(sd: int, buf: rawptr, len: uint, flags: int, addr: rawptr, alen: uintptr) -> i64 {
+_unix_sendto :: proc(sd: int, buf: rawptr, len: uint, flags: int, addr: rawptr, alen: socklen_t) -> i64 {
 	return i64(intrinsics.syscall(unix.SYS_sendto, uintptr(sd), uintptr(buf), uintptr(len), uintptr(flags), uintptr(addr), uintptr(alen)))
 }
 
@@ -740,16 +755,16 @@ socket :: proc(domain: int, type: int, protocol: int) -> (Socket, Errno) {
 	return Socket(result), ERROR_NONE
 }
 
-bind :: proc(sd: Socket, addr: ^SOCKADDR) -> (Errno) {
-	result := _unix_bind(int(sd), addr, size_of(addr^))
+bind :: proc(sd: Socket, addr: ^SOCKADDR, len: socklen_t) -> (Errno) {
+	result := _unix_bind(int(sd), addr, len)
 	if result < 0 {
 		return _get_errno(result)
 	}
 	return ERROR_NONE
 }
 
-connect :: proc(sd: Socket, addr: ^SOCKADDR) -> (Errno) {
-	result := _unix_connect(int(sd), addr, size_of(addr^))
+connect :: proc(sd: Socket, addr: ^SOCKADDR, len: socklen_t) -> (Errno) {
+	result := _unix_connect(int(sd), addr, len)
 	if result < 0 {
 		return _get_errno(result)
 	}
@@ -780,8 +795,8 @@ setsockopt :: proc(sd: Socket, level: int, optname: int, optval: rawptr, optlen:
 	return ERROR_NONE
 }
 
-recvfrom :: proc(sd: Socket, data: []byte, flags: int, addr: ^SOCKADDR) -> (u32, Errno) {
-	result := _unix_recvfrom(int(sd), raw_data(data), len(data), flags, addr, size_of(addr^))
+recvfrom :: proc(sd: Socket, data: []byte, flags: int, addr: ^SOCKADDR, addrlen: ^socklen_t) -> (u32, Errno) {
+	result := _unix_recvfrom(int(sd), raw_data(data), len(data), flags, addr, uintptr(addrlen))
 	if result < 0 {
 		return 0, _get_errno(int(result))
 	}
@@ -796,8 +811,8 @@ recv :: proc(sd: Socket, data: []byte, flags: int) -> (u32, Errno) {
 	return u32(result), ERROR_NONE
 }
 
-sendto :: proc(sd: Socket, data: []byte, flags: int, addr: ^SOCKADDR) -> (u32, Errno) {
-	result := _unix_sendto(int(sd), raw_data(data), len(data), flags, addr, size_of(addr^))
+sendto :: proc(sd: Socket, data: []u8, flags: int, addr: ^SOCKADDR, addrlen: socklen_t) -> (u32, Errno) {
+	result := _unix_sendto(int(sd), raw_data(data), len(data), flags, addr, addrlen)
 	if result < 0 {
 		return 0, _get_errno(int(result))
 	}
