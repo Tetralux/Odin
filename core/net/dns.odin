@@ -3,15 +3,23 @@ package net
 import "core:mem"
 import "core:os"
 
+DNS_TYPE_A     :: 0x1
+DNS_TYPE_NS    :: 0x2
+DNS_TYPE_CNAME :: 0x5
+DNS_TYPE_MX    :: 0xf
+DNS_TYPE_AAAA  :: 0x1c
+DNS_TYPE_TEXT  :: 0x10
+DNS_TYPE_SRV   :: 0x21
+
 // TODO: Support SRV records.
 Dns_Record_Type :: enum u16 {
-	Ipv4 = os.DNS_TYPE_A,    // Ipv4 address.
-	Ipv6 = os.DNS_TYPE_AAAA, // Ipv6 address.
-	Cname = os.DNS_TYPE_CNAME, // Another host name.
-	Txt = os.DNS_TYPE_TEXT,  // Arbitrary binary data or text.
-	Ns = os.DNS_TYPE_NS,     // Address of a name (DNS) server.
-	Mx = os.DNS_TYPE_MX,     // Address and preference priority of a mail exchange server.
-	Srv = os.DNS_TYPE_SRV,   // Address, port, priority, and weight of a host that provides a particular service.
+	Ipv4 = DNS_TYPE_A,    // Ipv4 address.
+	Ipv6 = DNS_TYPE_AAAA, // Ipv6 address.
+	Cname = DNS_TYPE_CNAME, // Another host name.
+	Txt = DNS_TYPE_TEXT,  // Arbitrary binary data or text.
+	Ns = DNS_TYPE_NS,     // Address of a name (DNS) server.
+	Mx = DNS_TYPE_MX,     // Address and preference priority of a mail exchange server.
+	Srv = DNS_TYPE_SRV,   // Address, port, priority, and weight of a host that provides a particular service.
 }
 
 // An IPv4 address that the domain name maps to.

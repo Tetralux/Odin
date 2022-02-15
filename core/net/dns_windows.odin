@@ -5,18 +5,6 @@ import "core:mem"
 
 import win "core:sys/windows"
 
-
-// TODO: Support SRV records.
-Dns_Record_Type :: enum u16 {
-	Ipv4 = win.DNS_TYPE_A,    // Ipv4 address.
-	Ipv6 = win.DNS_TYPE_AAAA, // Ipv6 address.
-	Cname = win.DNS_TYPE_CNAME, // Another host name.
-	Txt = win.DNS_TYPE_TEXT,  // Arbitrary binary data or text.
-	Ns = win.DNS_TYPE_NS,     // Address of a name (DNS) server.
-	Mx = win.DNS_TYPE_MX,     // Address and preference priority of a mail exchange server.
-	Srv = win.DNS_TYPE_SRV,   // Address, port, priority, and weight of a host that provides a particular service.
-}
-
 // Performs a recursive DNS query for records of a particular type for the hostname.
 //
 // NOTE: This procedure instructs the DNS resolver to recursively perform CNAME requests on our behalf,
