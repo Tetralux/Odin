@@ -7,6 +7,21 @@ import "core:mem"
 import "core:os"
 import "core:fmt"
 
+/*
+	TODO(cloin): Does the DNS Resolver needs to recursively hop through CNAMEs to get the IP
+	or is that what recursion desired does? Do we need to handle recursion unavailable?
+	How do we deal with is_authoritative / is_truncated?
+
+	TODO(cloin): How do we cache resolv.conf in a threadsafe way?
+
+	TODO(cloin): Handle more record types
+
+	TODO(cloin): Add short recvfrom timeout per DNS server so we aren't waiting 
+	forever on networks with bad nameservers / no internet
+
+	TODO(cloin): Does decode_hostname *have* to be that gross?
+*/
+
 
 @private
 _pack_dns_header :: proc(hdr: Dns_Header) -> (id: u16be, bits: u16be) {
