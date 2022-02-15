@@ -491,19 +491,21 @@ get_dns_records :: proc(hostname: string, type: Dns_Record_Type, allocator := co
 		if addr == nil {
 			return
 		}
-		skaddr, addrsize := address_to_sockaddr(addr, 53)
+
+		skaddr := endpoint_to_sockaddr({addr, 53})
+		sksize := os.socklen_t(size_of(skaddr))
 
 		conn, err1 := os.socket(os.AF_INET, os.SOCK_DGRAM, os.IPPROTO_UDP)
 		if err1 != os.ERROR_NONE {
 			return
 		}
 
-		send_sz, err2 := os.sendto(conn, dns_packet[:], 0, cast(^os.SOCKADDR)&skaddr, addrsize)
+		send_sz, err2 := os.sendto(conn, dns_packet[:], 0, cast(^os.SOCKADDR)&skaddr, sksize)
 		if err2 != os.ERROR_NONE {
 			return
 		}
 
-		recv_sz, err3 := os.recvfrom(conn, dns_response_buf[:], 0, cast(^os.SOCKADDR)&skaddr, &addrsize)
+		recv_sz, err3 := os.recvfrom(conn, dns_response_buf[:], 0, cast(^os.SOCKADDR)&skaddr, &sksize)
 		if err3 != os.ERROR_NONE {
 			fmt.printf("recv error: %d\n", err3)
 			return
