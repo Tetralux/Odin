@@ -142,8 +142,10 @@ _decode_hostname :: proc(packet: []u8, start_idx: int, allocator := context.allo
 
 	stack := [stack_max+1]Host_Stack{}
 	stack_idx := 1
-	out_size := 0
 	stack[stack_idx] = {start_idx, false}
+
+	out_size := 0
+	print_size := 0
 
 	frame: for ;; {
 		if stack_idx > stack_max || stack_idx < 0 {
@@ -166,8 +168,7 @@ _decode_hostname :: proc(packet: []u8, start_idx: int, allocator := context.allo
 			continue frame
 		}
 
-		offset := stack[stack_idx].off
-		idx := offset
+		idx := stack[stack_idx].off
 		if idx >= len(packet) {
 			fmt.printf("Invalid index %d > %d\n", idx, len(packet))
 			return
@@ -178,13 +179,17 @@ _decode_hostname :: proc(packet: []u8, start_idx: int, allocator := context.allo
 			// This handles normal sequence: <length> <data>
 			case:
 				idx2 := idx + int(packet[idx]) + 1
-				if idx2 - offset > name_max {
-					fmt.printf("hostname too long!\n")
-					return
-				} else if idx2 < (idx + 1) || idx2 > len(packet) {
+				if idx2 < (idx + 1) || idx2 > len(packet) {
 					fmt.printf("Invalid index for hostname!\n")
 					return
 				}
+
+				label_len := idx2 - idx + 2
+				if print_size + label_len > name_max {
+					fmt.printf("label too large for hostname!\n")
+					return
+				}
+				print_size += label_len
 
 				strings.write_byte(&b, '.')
 				strings.write_bytes(&b, packet[idx+1:idx2])
