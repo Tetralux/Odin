@@ -131,7 +131,6 @@ _encode_hostname :: proc(b: ^strings.Builder, hostname: string, allocator := con
 _decode_hostname :: proc(packet: []u8, start_idx: int, allocator := context.allocator) -> (hostname: string, encode_size: int, ok: bool) {
 	Host_Stack :: struct {
 		off: int,
-		size: int,
 		followed_ptr: bool,
 	}
 
@@ -143,7 +142,8 @@ _decode_hostname :: proc(packet: []u8, start_idx: int, allocator := context.allo
 
 	stack := [stack_max+1]Host_Stack{}
 	stack_idx := 1
-	stack[stack_idx] = {start_idx, 0, false}
+	out_size := 0
+	stack[stack_idx] = {start_idx, false}
 
 	frame: for ;; {
 		if stack_idx > stack_max || stack_idx < 0 {
@@ -158,7 +158,6 @@ _decode_hostname :: proc(packet: []u8, start_idx: int, allocator := context.allo
 		// Unwind followed pointers, but don't clear frame 1
 		if stack[stack_idx].followed_ptr {
 			if stack_idx - 1 > 0 {
-				stack[stack_idx].size = 0
 				stack[stack_idx].off = 0
 				stack[stack_idx].followed_ptr = false
 			}
@@ -189,7 +188,10 @@ _decode_hostname :: proc(packet: []u8, start_idx: int, allocator := context.allo
 
 				strings.write_byte(&b, '.')
 				strings.write_bytes(&b, packet[idx+1:idx2])
-				stack[stack_idx].size += idx2 - idx + 1
+
+				if stack_idx == 1 {
+					out_size += idx2 - idx + 1
+				}
 
 				idx = idx2
 			case 0xC0:
@@ -210,17 +212,18 @@ _decode_hostname :: proc(packet: []u8, start_idx: int, allocator := context.allo
 					return
 				}
 
+				if stack_idx == 1 {
+					out_size += 3
+				}
+
 				// Set up the parent entry for return
 				stack[stack_idx].off = idx + 2
-				stack[stack_idx].size += 3
 				stack[stack_idx].followed_ptr = true
 
 				stack_idx += 1
 
 				// Ready the jump to the child slice
 				stack[stack_idx].off = ptr_offset
-				stack[stack_idx].size += 1
-				stack[stack_idx].followed_ptr = false
 
 				// Make a bold leap
 				continue frame
@@ -238,9 +241,8 @@ _decode_hostname :: proc(packet: []u8, start_idx: int, allocator := context.allo
 
 		}
 
-		// Only clears >1 frame, frame 1 is a running tally
+		// Only clears for frame > 1, frame 1 is a running tally
 		if (stack_idx - 1 > 0) {
-			stack[stack_idx].size = 0
 			stack[stack_idx].off = 0
 			stack[stack_idx].followed_ptr = false
 		}
@@ -249,7 +251,7 @@ _decode_hostname :: proc(packet: []u8, start_idx: int, allocator := context.allo
 	}
 
 	// size is always off by one, because it assumes a follow-up sequence
-	out_size := stack[1].size - 1
+	out_size -= 1
 	return strings.clone(strings.to_string(b)), out_size, true
 }
 
