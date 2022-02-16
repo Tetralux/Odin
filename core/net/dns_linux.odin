@@ -229,14 +229,14 @@ _decode_hostname :: proc(packet: []u8, start_idx: int, allocator := context.allo
 				// Set up the parent entry for return
 				stack[stack_idx].followed_ptr = true
 
-				// Ready the jump to the child slice
-				stack_idx += 1
-				stack[stack_idx].off = ptr_offset
-
 				// consume the pointer
 				if stack_idx == 1 {
 					out_size += 2
 				}
+
+				// Ready the jump to the child slice
+				stack_idx += 1
+				stack[stack_idx].off = ptr_offset
 
 				// Make a bold leap
 				continue frame
