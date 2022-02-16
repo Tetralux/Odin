@@ -98,10 +98,11 @@ _load_resolv_conf :: proc(allocator := context.allocator) -> (dns_servers: []str
 	return _dns_servers[:], true
 }
 
+/*
+	www.google.com -> 3www6google3com0
+*/
 @private
-_encode_hostname :: proc(hostname: string, allocator := context.allocator) -> (encoded_name: []u8, ok: bool) {
-	encoded_name = make([]u8, len(hostname) + 2)
-	b := strings.builder_from_slice(encoded_name)
+_encode_hostname :: proc(b: ^strings.Builder, hostname: string, allocator := context.allocator) -> (ok: bool) {
 	
 	label_max :: 63
 	
@@ -111,14 +112,21 @@ _encode_hostname :: proc(hostname: string, allocator := context.allocator) -> (e
 			return
 		}
 
-		strings.write_byte(&b, u8(len(section)))
-		strings.write_string(&b, section)
+		strings.write_byte(b, u8(len(section)))
+		strings.write_string(b, section)
 	}
-	strings.write_byte(&b, 0)
+	strings.write_byte(b, 0)
 
-	return encoded_name, true
+	return true
 }
 
+/*
+	3www6google3com0 -> www.google.com
+
+	-- May contain 0xC0 0x<offset> byte sequence,
+	instructs parser to read string from anywhere
+	in packet to enable string deduplication
+*/
 @private
 _decode_hostname :: proc(packet: []u8, start_idx: int, allocator := context.allocator) -> (hostname: string, encode_size: int, ok: bool) {
 	b := strings.make_builder()
@@ -167,9 +175,8 @@ _decode_hostname :: proc(packet: []u8, start_idx: int, allocator := context.allo
 }
 
 @private
-_parse_record :: proc(packet: []u8, cur_off: ^int) -> (record: Dns_Record, ok: bool) {
+_parse_record :: proc(packet: []u8, cur_off: ^int, filter: Dns_Record_Type = nil) -> (record: Dns_Record, ok: bool) {
 	record_buf := packet[cur_off^:]
-
 	hostname, hn_sz := _decode_hostname(packet, cur_off^) or_return
 
 	ahdr_sz := size_of(Dns_Record_Header)
@@ -184,6 +191,11 @@ _parse_record :: proc(packet: []u8, cur_off: ^int) -> (record: Dns_Record, ok: b
 	data_off := cur_off^ + int(hn_sz) + int(ahdr_sz);
 	data := packet[data_off:data_off+int(data_sz)]
 	cur_off^ += int(hn_sz) + int(ahdr_sz) + int(data_sz)
+
+	// nil == aggregate *everything*
+	if filter == nil || u16be(filter) != record_hdr.type {
+		return nil, true
+	}
 
 	_record: Dns_Record
 	#partial switch Dns_Record_Type(record_hdr.type) {
@@ -203,6 +215,21 @@ _parse_record :: proc(packet: []u8, cur_off: ^int) -> (record: Dns_Record, ok: b
 			addr_val: u128be = mem.slice_data_cast([]u128be, data)[0]
 			addr := Ipv6_Address(transmute([8]u16be)addr_val)
 			_record = Dns_Record_Ipv6(addr)
+		case .Cname:
+			hostname, _ := _decode_hostname(packet, data_off) or_return
+			_record = Dns_Record_Cname(hostname)
+		case .Mx:
+			if len(data) <= 2 {
+				fmt.printf("HERE\n")
+				return
+			}
+
+			preference: u16be = mem.slice_data_cast([]u16be, data)[0]
+			hostname, _ := _decode_hostname(packet, data_off + size_of(preference)) or_return
+			_record = Dns_Record_Mx{
+				host       = hostname,
+				preference = int(preference),
+			}
 		case:
 			fmt.printf("ignoring %d\n", record_hdr.type)
 			return
@@ -212,8 +239,31 @@ _parse_record :: proc(packet: []u8, cur_off: ^int) -> (record: Dns_Record, ok: b
 	return _record, true
 }
 
+/*
+	DNS Query Response Format:
+	- Dns_Header (packed)
+	- Query Count
+	- Answer Count
+	- Authority Count
+	- Additional Count
+	- Query[]
+		- Hostname -- encoded
+		- Type
+		- Class
+	- Answer[]
+		- DNS Record Data
+	- Authority[]
+		- DNS Record Data
+	- Additional[]
+		- DNS Record Data
+
+	DNS Record Data:
+	- Dns_Record_Header
+	- Data[]
+*/
+
 @private
-_parse_response :: proc(response: []u8, allocator := context.allocator) -> (records: [dynamic]Dns_Record, ok: bool) {
+_parse_response :: proc(response: []u8, filter: Dns_Record_Type = nil, allocator := context.allocator) -> (records: []Dns_Record, ok: bool) {
 	header_size_bytes :: 12
 	if len(response) < header_size_bytes {
 		return
@@ -242,11 +292,11 @@ _parse_response :: proc(response: []u8, allocator := context.allocator) -> (reco
 			continue
 		}
 
-		
+		dq_sz :: 4
 		hostname, hn_sz := _decode_hostname(response, cur_idx) or_return
-		dns_query := mem.slice_data_cast([]u16be, response[cur_idx+hn_sz:cur_idx+hn_sz+4])
+		dns_query := mem.slice_data_cast([]u16be, response[cur_idx+hn_sz:cur_idx+hn_sz+dq_sz])
 
-		cur_idx += hn_sz + 4
+		cur_idx += hn_sz + dq_sz
 	}
 
 	for i := 0; i < answer_count; i += 1 {
@@ -254,27 +304,42 @@ _parse_response :: proc(response: []u8, allocator := context.allocator) -> (reco
 			continue
 		}
 
-		rec := _parse_record(response, &cur_idx) or_return
+		rec := _parse_record(response, &cur_idx, filter) or_return
+		if rec == nil {
+			continue
+		}
+
 		append(&_records, rec)
 	}
+
 	for i := 0; i < authority_count; i += 1 {
 		if cur_idx == len(response) {
 			continue
 		}
 
-		rec := _parse_record(response, &cur_idx) or_return
+		rec := _parse_record(response, &cur_idx, filter) or_return
+		if rec == nil {
+			continue
+		}
+
 		append(&_records, rec)
 	}
+
 	for i := 0; i < additional_count; i += 1 {
 		if cur_idx == len(response) {
 			continue
 		}
 
-		rec := _parse_record(response, &cur_idx) or_return
+		rec := _parse_record(response, &cur_idx, filter) or_return
+		if rec == nil {
+			continue
+		}
+
 		append(&_records, rec)
 	}
 	
-	return _records, true
+	fmt.printf("records: %d\n", len(_records))
+	return _records[:], true
 }
 
 // Performs a recursive DNS query for records of a particular type for the hostname.
@@ -283,7 +348,6 @@ _parse_response :: proc(response: []u8, allocator := context.allocator) -> (reco
 // meaning that DNS queries for a hostname will resolve through CNAME records until an
 // IP address is reached.
 //
-// TODO(cloin): Doesn't use the type information to form queries yet
 get_dns_records :: proc(hostname: string, type: Dns_Record_Type, allocator := context.allocator) -> (records: []Dns_Record, ok: bool) {
 	context.allocator = allocator
 
@@ -314,11 +378,10 @@ get_dns_records :: proc(hostname: string, type: Dns_Record_Type, allocator := co
 	dns_hdr[1] = bits
 	dns_hdr[2] = 1
 
-	encoded_name := _encode_hostname(hostname) or_return
 	dns_query := [2]u16be{ u16be(type), 1 }
 
 	strings.write_bytes(&b, mem.slice_data_cast([]u8, dns_hdr[:]))
-	strings.write_bytes(&b, encoded_name)
+	_encode_hostname(&b, hostname) or_return
 	strings.write_bytes(&b, mem.slice_data_cast([]u8, dns_query[:]))
 
 	dns_packet := transmute([]u8)strings.to_string(b)
@@ -357,14 +420,17 @@ get_dns_records :: proc(hostname: string, type: Dns_Record_Type, allocator := co
 			continue
 		}
 
-		rsp, _ok := _parse_response(dns_response)
+		fmt.printf("%x\n", dns_response)
+		rsp, _ok := _parse_response(dns_response, type)
 		if !_ok {
 			return
 		}
 
-		if len(rsp) > 0 {
-			return rsp[:], true
+		if len(rsp) == 0 {
+			continue
 		}
+
+		return rsp[:], true
 	}
 
 	return
