@@ -123,55 +123,134 @@ _encode_hostname :: proc(b: ^strings.Builder, hostname: string, allocator := con
 /*
 	3www6google3com0 -> www.google.com
 
-	-- May contain 0xC0 0x<offset> byte sequence,
+	-- May contain 0xC0 0x<offset> byte sequences,
 	instructs parser to read string from anywhere
 	in packet to enable string deduplication
 */
 @private
 _decode_hostname :: proc(packet: []u8, start_idx: int, allocator := context.allocator) -> (hostname: string, encode_size: int, ok: bool) {
-	b := strings.make_builder()
-	defer strings.destroy_builder(&b)
+	Host_Stack :: struct {
+		off: int,
+		size: int,
+		followed_ptr: bool,
+	}
 
-	encoded_name := packet[start_idx:]
+	stack_max :: 255
+	name_max  :: 255
 
-	cur_off := 0
-	for ;; {
-		name_chunk: []u8
+	output := [name_max]u8{}
+	b := strings.builder_from_slice(output[:])
 
-		// Branch and pull in name fragment
-		if encoded_name[cur_off] == 0xC0 {
-			offset := encoded_name[cur_off + 1] 
-			name_chunk = packet[offset:]
-		} else {
-			name_chunk = encoded_name[cur_off:]
-		}
+	stack := [stack_max+1]Host_Stack{}
+	stack_idx := 1
+	stack[stack_idx] = {start_idx, 0, false}
 
-		length := name_chunk[0]
-		if length == 0 {
-			cur_off += 1
-			break
-		}
-		if length > 63 {
+	frame: for ;; {
+		if stack_idx > stack_max || stack_idx < 0 {
+			fmt.printf("stack is borked %d\n", stack_idx)
 			return
 		}
 
-		strings.write_bytes(&b, name_chunk[1:length + 1])
-
-		if encoded_name[cur_off] == 0xC0 {
-			cur_off += 2
-			break
-		} else {
-			cur_off += int(length) + 1
+		if stack_idx == 0 {
+			break frame
 		}
 
-		if cur_off + 1 == len(encoded_name) {
-			break
+		// Unwind followed pointers, but don't clear frame 1
+		if stack[stack_idx].followed_ptr {
+			if stack_idx - 1 > 0 {
+				stack[stack_idx].size = 0
+				stack[stack_idx].off = 0
+				stack[stack_idx].followed_ptr = false
+			}
+
+			stack_idx -= 1
+			continue frame
 		}
 
-		strings.write_byte(&b, '.')
+		offset := stack[stack_idx].off
+		idx := offset
+		if idx >= len(packet) {
+			fmt.printf("Invalid index %d > %d\n", idx, len(packet))
+			return
+		}
+
+		for packet[idx] != 0 {
+			switch packet[idx] & 0xC0 {
+			// This handles normal sequence: <length> <data>
+			case:
+				idx2 := idx + int(packet[idx]) + 1
+				if idx2 - offset > name_max {
+					fmt.printf("hostname too long!\n")
+					return
+				} else if idx2 < (idx + 1) || idx2 > len(packet) {
+					fmt.printf("Invalid index for hostname!\n")
+					return
+				}
+
+				strings.write_byte(&b, '.')
+				strings.write_bytes(&b, packet[idx+1:idx2])
+				stack[stack_idx].size += idx2 - idx + 1
+
+				idx = idx2
+			case 0xC0:
+				if idx + 2 > len(packet) {
+					fmt.printf("index invalid 1\n")
+					return
+				}
+
+				/*
+					This is a jump to either a sequence, 
+					another pointer, or a sequence followed by a pointer
+				*/
+
+				data: u16be = mem.slice_data_cast([]u16be, packet[idx:idx+2])[0]
+				ptr_offset := int(data & 0x3FFF)
+				if ptr_offset > len(packet) {
+					fmt.printf("Pointer offset invalid\n")
+					return
+				}
+
+				// Set up the parent entry for return
+				stack[stack_idx].off = idx + 2
+				stack[stack_idx].size += 3
+				stack[stack_idx].followed_ptr = true
+
+				stack_idx += 1
+
+				// Ready the jump to the child slice
+				stack[stack_idx].off = ptr_offset
+				stack[stack_idx].size += 1
+				stack[stack_idx].followed_ptr = false
+
+				// Make a bold leap
+				continue frame
+			case 0x40:
+				fmt.printf("Can't handle these name 0x40!\n")
+				return
+			case 0x80:
+				fmt.printf("Can't handle these name 0x80!\n")
+				return
+			}
+			if idx >= len(packet) {
+				fmt.printf("index invalid 2\n")
+				return
+			}
+
+		}
+
+		// Only clears >1 frame, frame 1 is a running tally
+		if (stack_idx - 1 > 0) {
+			stack[stack_idx].size = 0
+			stack[stack_idx].off = 0
+			stack[stack_idx].followed_ptr = false
+		}
+		stack_idx -= 1
+		idx += 1
 	}
 
-	return strings.to_string(b), cur_off, true
+	// size is always off by one, because it assumes a follow-up sequence
+	out_size := stack[1].size - 1
+	return strings.clone(strings.to_string(b)), out_size, true
 }
 
 @private
@@ -218,14 +297,31 @@ _parse_record :: proc(packet: []u8, cur_off: ^int, filter: Dns_Record_Type = nil
 		case .Cname:
 			hostname, _ := _decode_hostname(packet, data_off) or_return
 			_record = Dns_Record_Cname(hostname)
+		case .Ns:
+			name, _ := _decode_hostname(packet, data_off + (size_of(u16be) * 3)) or_return
+			_record = Dns_Record_Ns(name)
+		case .Srv:
+			if len(data) <= 6 {
+				return
+			}
+
+			priority: u16be = mem.slice_data_cast([]u16be, data)[0]
+			weight:   u16be = mem.slice_data_cast([]u16be, data)[1]
+			port:     u16be = mem.slice_data_cast([]u16be, data)[2]
+			name, _ := _decode_hostname(packet, data_off + (size_of(u16be) * 3)) or_return
+			_record = Dns_Record_Srv{
+				priority = int(priority),
+				weight   = int(weight),
+				port     = int(port),
+				service_name = name,
+			}
 		case .Mx:
 			if len(data) <= 2 {
-				fmt.printf("HERE\n")
 				return
 			}
 
 			preference: u16be = mem.slice_data_cast([]u16be, data)[0]
-			hostname, _ := _decode_hostname(packet, data_off + size_of(preference)) or_return
+			hostname, _ := _decode_hostname(packet, data_off + size_of(u16be)) or_return
 			_record = Dns_Record_Mx{
 				host       = hostname,
 				preference = int(preference),
@@ -338,7 +434,6 @@ _parse_response :: proc(response: []u8, filter: Dns_Record_Type = nil, allocator
 		append(&_records, rec)
 	}
 	
-	fmt.printf("records: %d\n", len(_records))
 	return _records[:], true
 }
 
@@ -420,7 +515,6 @@ get_dns_records :: proc(hostname: string, type: Dns_Record_Type, allocator := co
 			continue
 		}
 
-		fmt.printf("%x\n", dns_response)
 		rsp, _ok := _parse_response(dns_response, type)
 		if !_ok {
 			return
@@ -438,5 +532,23 @@ get_dns_records :: proc(hostname: string, type: Dns_Record_Type, allocator := co
 
 destroy_dns_records :: proc(records: []Dns_Record, allocator := context.allocator) {
 	context.allocator = allocator
+
+	for rec in records {
+		switch r in rec {
+		case Dns_Record_Ipv4:  // nothing to do
+		case Dns_Record_Ipv6:  // nothing to do
+		case Dns_Record_Cname:
+			delete(string(r))
+		case Dns_Record_Text:
+			delete(string(r))
+		case Dns_Record_Ns:
+			delete(string(r))
+		case Dns_Record_Mx:
+			delete(r.host)
+		case Dns_Record_Srv:
+			delete(r.service_name) // NOTE(tetra): the three strings are substrings; the service name is the start of that string.
+		}
+	}
+
 	delete(records)
 }
