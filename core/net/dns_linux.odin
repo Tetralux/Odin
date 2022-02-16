@@ -178,28 +178,30 @@ _decode_hostname :: proc(packet: []u8, start_idx: int, allocator := context.allo
 			switch packet[idx] & 0xC0 {
 			// This handles normal sequence: <length> <data>
 			case:
-				idx2 := idx + int(packet[idx]) + 1
-				if idx2 < (idx + 1) || idx2 > len(packet) {
+				label_size := int(packet[idx])
+				idx2 := idx + label_size + 1
+				if idx2 < idx + 1 || idx2 > len(packet) {
 					fmt.printf("Invalid index for hostname!\n")
 					return
 				}
 
-				label_len := idx2 - idx + 2
-				if print_size + label_len > name_max {
+				if print_size + label_size + 1 > name_max {
 					fmt.printf("label too large for hostname!\n")
 					return
 				}
-				print_size += label_len
 
 				strings.write_byte(&b, '.')
 				strings.write_bytes(&b, packet[idx+1:idx2])
+				print_size += label_size + 1
 
 				if stack_idx == 1 {
 					out_size += idx2 - idx + 1
 				}
 
+				// jump the whole sequence
 				idx = idx2
 			case 0xC0:
+				// Ensure there's enough space for the pointer
 				if idx + 2 > len(packet) {
 					fmt.printf("index invalid 1\n")
 					return
@@ -207,7 +209,8 @@ _decode_hostname :: proc(packet: []u8, start_idx: int, allocator := context.allo
 
 				/*
 					This is a jump to either a sequence, 
-					another pointer, or a sequence followed by a pointer
+					another pointer, or a sequence followed by a pointer.
+					pointers and 0s are sequence terminals
 				*/
 
 				data: u16be = mem.slice_data_cast([]u16be, packet[idx:idx+2])[0]
