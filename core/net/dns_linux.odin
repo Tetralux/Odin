@@ -194,12 +194,18 @@ _decode_hostname :: proc(packet: []u8, start_idx: int, allocator := context.allo
 				strings.write_bytes(&b, packet[idx+1:idx2])
 				print_size += label_size + 1
 
+				// consume the sequence length
 				if stack_idx == 1 {
-					out_size += idx2 - idx + 1
+					out_size += idx2 - idx
 				}
 
 				// jump the whole sequence
 				idx = idx2
+
+				// if the sequence is followed by a zero, consume it too
+				if packet[idx] == 0 && stack_idx == 1 {
+					out_size += 1
+				}
 			case 0xC0:
 				// Ensure there's enough space for the pointer
 				if idx + 2 > len(packet) {
@@ -220,18 +226,17 @@ _decode_hostname :: proc(packet: []u8, start_idx: int, allocator := context.allo
 					return
 				}
 
-				if stack_idx == 1 {
-					out_size += 3
-				}
-
 				// Set up the parent entry for return
-				stack[stack_idx].off = idx + 2
 				stack[stack_idx].followed_ptr = true
 
-				stack_idx += 1
-
 				// Ready the jump to the child slice
+				stack_idx += 1
 				stack[stack_idx].off = ptr_offset
+
+				// consume the pointer
+				if stack_idx == 1 {
+					out_size += 2
+				}
 
 				// Make a bold leap
 				continue frame
@@ -254,12 +259,11 @@ _decode_hostname :: proc(packet: []u8, start_idx: int, allocator := context.allo
 			stack[stack_idx].off = 0
 			stack[stack_idx].followed_ptr = false
 		}
+
 		stack_idx -= 1
 		idx += 1
 	}
 
-	// size is always off by one, because it assumes a follow-up sequence
-	out_size -= 1
 	return strings.clone(strings.to_string(b)), out_size, true
 }
 
