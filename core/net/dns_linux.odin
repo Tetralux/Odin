@@ -3,7 +3,7 @@ package net
 import "core:strings"
 import "core:bytes"
 import "core:mem"
-
+import "core:time"
 import "core:os"
 import "core:fmt"
 
@@ -17,6 +17,7 @@ import "core:fmt"
 	TODO(cloin): Handle more record types
 */
 
+name_max  :: 255
 
 @private
 _pack_dns_header :: proc(hdr: Dns_Header) -> (id: u16be, bits: u16be) {
@@ -112,7 +113,6 @@ _encode_hostname :: proc(b: ^strings.Builder, hostname: string, allocator := con
 
 @private
 _decode_hostname :: proc(packet: []u8, start_idx: int, allocator := context.allocator) -> (hostname: string, encode_size: int, ok: bool) {
-	name_max  :: 255
 	output := [name_max]u8{}
 	b := strings.builder_from_slice(output[:])
 
@@ -443,10 +443,6 @@ get_dns_records :: proc(hostname: string, type: Dns_Record_Type, allocator := co
 	}
 
 	id, bits := _pack_dns_header(hdr)
-
-	b := strings.make_builder()
-	defer strings.destroy_builder(&b)
-
 	dns_hdr := [6]u16be{}
 	dns_hdr[0] = id
 	dns_hdr[1] = bits
@@ -454,11 +450,14 @@ get_dns_records :: proc(hostname: string, type: Dns_Record_Type, allocator := co
 
 	dns_query := [2]u16be{ u16be(type), 1 }
 
+	output := [(size_of(u16be) * 6) + name_max + (size_of(u16be) * 2)]u8{}
+	b := strings.builder_from_slice(output[:])
+
 	strings.write_bytes(&b, mem.slice_data_cast([]u8, dns_hdr[:]))
 	_encode_hostname(&b, hostname) or_return
 	strings.write_bytes(&b, mem.slice_data_cast([]u8, dns_query[:]))
 
-	dns_packet := transmute([]u8)strings.to_string(b)
+	dns_packet := output[:strings.builder_len(b)]
 
 	dns_response_buf := [4096]u8{}
 	dns_response: []u8
@@ -468,48 +467,40 @@ get_dns_records :: proc(hostname: string, type: Dns_Record_Type, allocator := co
 			return
 		}
 
-		skaddr := endpoint_to_sockaddr({addr, 53})
-		sksize := os.socklen_t(size_of(skaddr))
-
-		conn, err1 := os.socket(os.AF_INET, os.SOCK_DGRAM, os.IPPROTO_UDP)
-		if err1 != os.ERROR_NONE {
+		conn, sock_err := make_unbound_udp_socket(family_from_address(addr))
+		if sock_err != nil {
+			fmt.printf("here\n")
 			return
 		}
+		defer close(conn)
 
-		send_sz, err2 := os.sendto(conn, dns_packet[:], 0, cast(^os.SOCKADDR)&skaddr, sksize)
-		if err2 != os.ERROR_NONE {
-			return
-		}
-
-		tv: os.Timeval
-		tv.nanoseconds = 0
-		tv.seconds = 1
-		ptr := &tv
-		length := i32(size_of(tv))
-
-		err3 := os.setsockopt(conn, os.SOL_SOCKET, os.SO_RCVTIMEO_NEW, ptr, length)
-		if err3 != os.ERROR_NONE {
-			fmt.printf("setsockopt error: %d\n", err3)
-			return
-		}
-
-		recv_sz, err4 := os.recvfrom(conn, dns_response_buf[:], 0, cast(^os.SOCKADDR)&skaddr, &sksize)
-		if err4 == os.EAGAIN {
-			fmt.printf("DNS Server response timed out\n")
+		dns_addr := Endpoint{addr, 53}
+		send_sz, send_err := send(conn, dns_packet[:], dns_addr)
+		if send_err != nil {
+			fmt.printf("here2\n")
 			continue
 		}
 
-		if err4 != os.ERROR_NONE {
-			fmt.printf("recv error: %d\n", err4)
+		set_err := set_option(conn, .Receive_Timeout, time.Duration(100000))
+		if set_err != nil {
+			fmt.printf("here3\n")
 			return
 		}
 
-		dns_response = dns_response_buf[:recv_sz]
-		os.close(os.Handle(conn))
+		recv_sz, recv_addr, recv_err := recv_udp(conn, dns_response_buf[:])
+		if recv_err == Udp_Recv_Error.Timeout_Or_Would_Block {
+			fmt.printf("DNS Server response timed out\n")
+			continue
+		} else if recv_err != nil {
+			fmt.printf("here4\n")
+			continue
+		}
 
 		if recv_sz == 0 {
 			continue
 		}
+
+		dns_response = dns_response_buf[:recv_sz]
 
 		rsp, _ok := _parse_response(dns_response, type)
 		if !_ok {
