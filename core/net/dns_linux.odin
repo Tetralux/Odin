@@ -120,149 +120,98 @@ _encode_hostname :: proc(b: ^strings.Builder, hostname: string, allocator := con
 	return true
 }
 
-/*
-	3www6google3com0 -> www.google.com
-
-	-- May contain 0xC0 0x<offset> byte sequences,
-	instructs parser to read string from anywhere
-	in packet to enable string deduplication
-*/
 @private
 _decode_hostname :: proc(packet: []u8, start_idx: int, allocator := context.allocator) -> (hostname: string, encode_size: int, ok: bool) {
-	Host_Stack :: struct {
-		off: int,
-		followed_ptr: bool,
-	}
-
-	stack_max :: 255
 	name_max  :: 255
-
 	output := [name_max]u8{}
 	b := strings.builder_from_slice(output[:])
 
-	stack := [stack_max+1]Host_Stack{}
-	stack_idx := 1
-	stack[stack_idx] = {start_idx, false}
-
+	// Figure out how many bytes we need to skip in the packet for this hostname
 	out_size := 0
-	print_size := 0
+	data := packet[start_idx:]
+	out_check: for i := 0; i < len(data); i += 1 {
+		if data[i] == 0 {
+			out_size += 1
+			break
+		}
 
-	frame: for ;; {
-		if stack_idx > stack_max || stack_idx < 0 {
-			fmt.printf("stack is borked %d\n", stack_idx)
+		if data[i] > 63 && data[i] != 0xC0 {
+			fmt.printf("Can't handle this token!\n")
 			return
 		}
 
-		if stack_idx == 0 {
-			break frame
+		switch data[i] {
+		case 0xC0:
+			out_size += 2
+			break out_check
+		case:
+			label_len := int(data[i])
+			out_size += label_len + 1
+			i += label_len
 		}
-
-		// Unwind followed pointers, but don't clear frame 1
-		if stack[stack_idx].followed_ptr {
-			if stack_idx - 1 > 0 {
-				stack[stack_idx].off = 0
-				stack[stack_idx].followed_ptr = false
-			}
-
-			stack_idx -= 1
-			continue frame
-		}
-
-		idx := stack[stack_idx].off
-		if idx >= len(packet) {
-			fmt.printf("Invalid index %d > %d\n", idx, len(packet))
-			return
-		}
-
-		for packet[idx] != 0 {
-			switch packet[idx] & 0xC0 {
-			// This handles normal sequence: <length> <data>
-			case:
-				label_size := int(packet[idx])
-				idx2 := idx + label_size + 1
-				if idx2 < idx + 1 || idx2 > len(packet) {
-					fmt.printf("Invalid index for hostname!\n")
-					return
-				}
-
-				if print_size + label_size + 1 > name_max {
-					fmt.printf("label too large for hostname!\n")
-					return
-				}
-
-				strings.write_byte(&b, '.')
-				strings.write_bytes(&b, packet[idx+1:idx2])
-				print_size += label_size + 1
-
-				// consume the sequence length
-				if stack_idx == 1 {
-					out_size += idx2 - idx
-				}
-
-				// jump the whole sequence
-				idx = idx2
-
-				// if the sequence is followed by a zero, consume it too
-				if packet[idx] == 0 && stack_idx == 1 {
-					out_size += 1
-				}
-			case 0xC0:
-				// Ensure there's enough space for the pointer
-				if idx + 2 > len(packet) {
-					fmt.printf("index invalid 1\n")
-					return
-				}
-
-				/*
-					This is a jump to either a sequence, 
-					another pointer, or a sequence followed by a pointer.
-					pointers and 0s are sequence terminals
-				*/
-
-				data: u16be = mem.slice_data_cast([]u16be, packet[idx:idx+2])[0]
-				ptr_offset := int(data & 0x3FFF)
-				if ptr_offset > len(packet) {
-					fmt.printf("Pointer offset invalid\n")
-					return
-				}
-
-				// Set up the parent entry for return
-				stack[stack_idx].followed_ptr = true
-
-				// consume the pointer
-				if stack_idx == 1 {
-					out_size += 2
-				}
-
-				// Ready the jump to the child slice
-				stack_idx += 1
-				stack[stack_idx].off = ptr_offset
-
-				// Make a bold leap
-				continue frame
-			case 0x40:
-				fmt.printf("Can't handle these name 0x40!\n")
-				return
-			case 0x80:
-				fmt.printf("Can't handle these name 0x80!\n")
-				return
-			}
-			if idx >= len(packet) {
-				fmt.printf("index invalid 2\n")
-				return
-			}
-
-		}
-
-		// Only clears for frame > 1, frame 1 is a running tally
-		if (stack_idx - 1 > 0) {
-			stack[stack_idx].off = 0
-			stack[stack_idx].followed_ptr = false
-		}
-
-		stack_idx -= 1
-		idx += 1
 	}
+
+	if start_idx + out_size > len(packet) {
+		fmt.printf("not enough bytes in packet for hostname!\n")
+		return
+	}
+
+	// Evaluate tokens to generate the hostname
+	print_size := 0
+	cur_idx := start_idx
+	iteration_max := 0
+	for cur_idx < len(packet) {
+		if packet[cur_idx] == 0 {
+			break
+		}
+
+		if iteration_max > 255 {
+			fmt.printf("Taking too long, not bothering\n")
+			return
+		}
+
+		if packet[cur_idx] > 63 && packet[cur_idx] != 0xC0 {
+			fmt.printf("Can't handle this token!\n")
+			return
+		}
+
+		switch packet[cur_idx] {
+
+		// This is a pointer to more data, jump to it
+		case 0xC0:
+			val: u16be = mem.slice_data_cast([]u16be, packet[cur_idx:cur_idx+2])[0]
+			ptr_offset := int(val & 0x3FFF)
+			if ptr_offset > len(packet) {
+				fmt.printf("Pointer offset invalid\n")
+				return
+			}
+
+			cur_idx = ptr_offset
+
+		// This is a label, insert it into the hostname
+		case:
+			label_size := int(packet[cur_idx])
+			idx2 := cur_idx + label_size + 1
+			if idx2 < cur_idx + 1 || idx2 > len(packet) {
+				fmt.printf("Invalid index for hostname!\n")
+				return
+			}
+
+			if print_size + label_size + 1 > name_max {
+				fmt.printf("label too large for hostname!\n")
+				return
+			}
+
+			strings.write_byte(&b, '.')
+			strings.write_bytes(&b, packet[cur_idx+1:idx2])
+			print_size += label_size + 1
+
+			cur_idx = idx2
+		}
+		
+		iteration_max += 1
+	}
+	
 
 	return strings.clone(strings.to_string(b)), out_size, true
 }
