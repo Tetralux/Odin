@@ -19,8 +19,6 @@ import "core:fmt"
 	TODO(cloin): Add short recvfrom timeout per DNS server so we aren't waiting 
 	forever on networks with bad nameservers / no internet
 
-	TODO(cloin): Does decode_hostname *have* to be that gross?
-
 	TODO(cloin): Short circuit hostname lookup if the hostname is an IP?
 
 	TODO(cloin): Hostnames should be validated, they can't contain certain characters, need to look
@@ -126,42 +124,22 @@ _decode_hostname :: proc(packet: []u8, start_idx: int, allocator := context.allo
 	output := [name_max]u8{}
 	b := strings.builder_from_slice(output[:])
 
-	// Figure out how many bytes we need to skip in the packet for this hostname
-	out_size := 0
-	data := packet[start_idx:]
-	out_check: for i := 0; i < len(data); i += 1 {
-		if data[i] == 0 {
-			out_size += 1
-			break
-		}
-
-		if data[i] > 63 && data[i] != 0xC0 {
-			fmt.printf("Can't handle this token!\n")
-			return
-		}
-
-		switch data[i] {
-		case 0xC0:
-			out_size += 2
-			break out_check
-		case:
-			label_len := int(data[i])
-			out_size += label_len + 1
-			i += label_len
-		}
-	}
-
-	if start_idx + out_size > len(packet) {
-		fmt.printf("not enough bytes in packet for hostname!\n")
-		return
-	}
+	// If you're on level 0, update out_bytes, everything through a pointer
+	// doesn't count towards this hostname's packet length
 
 	// Evaluate tokens to generate the hostname
+	out_size := 0
+	level := 0
 	print_size := 0
 	cur_idx := start_idx
 	iteration_max := 0
 	for cur_idx < len(packet) {
 		if packet[cur_idx] == 0 {
+
+			if (level == 0) {
+				out_size += 1
+			}
+
 			break
 		}
 
@@ -179,7 +157,8 @@ _decode_hostname :: proc(packet: []u8, start_idx: int, allocator := context.allo
 
 		// This is a pointer to more data, jump to it
 		case 0xC0:
-			val: u16be = mem.slice_data_cast([]u16be, packet[cur_idx:cur_idx+2])[0]
+			pkt := packet[cur_idx:cur_idx+2]
+			val := (^u16be)(raw_data(pkt))^
 			ptr_offset := int(val & 0x3FFF)
 			if ptr_offset > len(packet) {
 				fmt.printf("Pointer offset invalid\n")
@@ -187,6 +166,11 @@ _decode_hostname :: proc(packet: []u8, start_idx: int, allocator := context.allo
 			}
 
 			cur_idx = ptr_offset
+
+			if (level == 0) {
+				out_size += 2
+				level += 1
+			}
 
 		// This is a label, insert it into the hostname
 		case:
@@ -207,11 +191,19 @@ _decode_hostname :: proc(packet: []u8, start_idx: int, allocator := context.allo
 			print_size += label_size + 1
 
 			cur_idx = idx2
+
+			if (level == 0) {
+				out_size += label_size + 1
+			}
 		}
 		
 		iteration_max += 1
 	}
-	
+
+	if start_idx + out_size > len(packet) {
+		fmt.printf("not enough bytes in packet for hostname!\n")
+		return
+	}
 
 	return strings.clone(strings.to_string(b)), out_size, true
 }
