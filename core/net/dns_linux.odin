@@ -488,7 +488,7 @@ get_dns_records :: proc(hostname: string, type: Dns_Record_Type, allocator := co
 		}
 
 		recv_sz, recv_addr, recv_err := recv_udp(conn, dns_response_buf[:])
-		if recv_err == Udp_Recv_Error.Timeout_Or_Would_Block {
+		if recv_err == Udp_Recv_Error.Timeout {
 			fmt.printf("DNS Server response timed out\n")
 			continue
 		} else if recv_err != nil {
