@@ -15,14 +15,6 @@ import "core:fmt"
 	TODO(cloin): How do we cache resolv.conf in a threadsafe way?
 
 	TODO(cloin): Handle more record types
-
-	TODO(cloin): Add short recvfrom timeout per DNS server so we aren't waiting 
-	forever on networks with bad nameservers / no internet
-
-	TODO(cloin): Short circuit hostname lookup if the hostname is an IP?
-
-	TODO(cloin): Hostnames should be validated, they can't contain certain characters, need to look
-	at the RFCs so sort it all out
 */
 
 
@@ -155,17 +147,17 @@ _decode_hostname :: proc(packet: []u8, start_idx: int, allocator := context.allo
 
 		switch packet[cur_idx] {
 
-		// This is a pointer to more data, jump to it
+		// This is a offset to more data in the packet, jump to it
 		case 0xC0:
 			pkt := packet[cur_idx:cur_idx+2]
 			val := (^u16be)(raw_data(pkt))^
-			ptr_offset := int(val & 0x3FFF)
-			if ptr_offset > len(packet) {
-				fmt.printf("Pointer offset invalid\n")
+			offset := int(val & 0x3FFF)
+			if offset > len(packet) {
+				fmt.printf("Packet offset invalid\n")
 				return
 			}
 
-			cur_idx = ptr_offset
+			cur_idx = offset
 
 			if (level == 0) {
 				out_size += 2
@@ -206,6 +198,36 @@ _decode_hostname :: proc(packet: []u8, start_idx: int, allocator := context.allo
 	}
 
 	return strings.clone(strings.to_string(b)), out_size, true
+}
+
+// Uses RFC 952 & RFC 1123
+@private
+_validate_hostname :: proc(hostname: string) -> (ok: bool) {
+	if len(hostname) > 255 || len(hostname) == 0 {
+		return
+	}
+
+	if hostname[0] == '-' {
+		return
+	}
+
+	_hostname := hostname
+	for label in strings.split_iterator(&_hostname, ".") {
+		if len(label) > 63 || len(label) == 0 {
+			return
+		}
+
+		for ch in label {
+			switch ch {
+			case:
+				return
+			case 'a'..'z', 'A'..'Z', '0'..'9', '-':
+				continue
+			}
+		}
+	}
+
+	return true
 }
 
 @private
@@ -407,6 +429,8 @@ get_dns_records :: proc(hostname: string, type: Dns_Record_Type, allocator := co
 		return
 	}
 
+	_validate_hostname(hostname) or_return
+
 	hdr := Dns_Header{
 		id = 0, 
 		is_response = false, 
@@ -457,9 +481,26 @@ get_dns_records :: proc(hostname: string, type: Dns_Record_Type, allocator := co
 			return
 		}
 
-		recv_sz, err3 := os.recvfrom(conn, dns_response_buf[:], 0, cast(^os.SOCKADDR)&skaddr, &sksize)
+		tv: os.Timeval
+		tv.nanoseconds = 0
+		tv.seconds = 1
+		ptr := &tv
+		length := i32(size_of(tv))
+
+		err3 := os.setsockopt(conn, os.SOL_SOCKET, os.SO_RCVTIMEO_NEW, ptr, length)
 		if err3 != os.ERROR_NONE {
-			fmt.printf("recv error: %d\n", err3)
+			fmt.printf("setsockopt error: %d\n", err3)
+			return
+		}
+
+		recv_sz, err4 := os.recvfrom(conn, dns_response_buf[:], 0, cast(^os.SOCKADDR)&skaddr, &sksize)
+		if err4 == os.EAGAIN {
+			fmt.printf("DNS Server response timed out\n")
+			continue
+		}
+
+		if err4 != os.ERROR_NONE {
+			fmt.printf("recv error: %d\n", err4)
 			return
 		}
 
