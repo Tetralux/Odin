@@ -481,7 +481,7 @@ get_dns_records :: proc(hostname: string, type: Dns_Record_Type, allocator := co
 			continue
 		}
 
-		set_err := set_option(conn, .Receive_Timeout, time.Duration(100000))
+		set_err := set_option(conn, .Receive_Timeout, time.Duration(time.Second * 1))
 		if set_err != nil {
 			fmt.printf("here3\n")
 			return
