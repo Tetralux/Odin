@@ -86,7 +86,7 @@ _is_done :: proc(t: ^Thread) -> bool {
 _join :: proc(t: ^Thread) {
 	sync.guard(&t.mutex)
 
-	if .Joined in t.flags || t.win32_thread == win32.INVALID_HANDLE {
+	if .Joined in t.flags || .Started not_in t.flags || t.win32_thread == win32.INVALID_HANDLE {
 		return
 	}
 

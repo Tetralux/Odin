@@ -39,6 +39,13 @@ _create :: proc(procedure: Thread_Proc, priority := Thread_Priority.Normal) -> ^
 			sync.wait(&t.cond, &t.mutex)
 		}
 
+		// NOTE(tetra, 2022-04-22): If you join the thread before you've started it, we'll add .Done to the flags
+		// in _join(), and then signal `t.cond`, which will cause it to escape the loop above.
+		// :JoinBeforeStart
+		if .Done in t.flags {
+			return nil
+		}
+
 		init_context := t.init_context
 		context =	init_context.? or_else runtime.default_context()
 
@@ -109,6 +116,12 @@ _is_done :: proc(t: ^Thread) -> bool {
 
 _join :: proc(t: ^Thread) {
 	sync.guard(&t.mutex)
+
+	// :JoinBeforeStart
+	if .Started not_in t.flags {
+		t.flags += { .Done }
+		sync.signal(&t.cond)
+	}
 
 	if .Joined in t.flags || unix.pthread_equal(unix.pthread_self(), t.unix_thread) {
 		return
