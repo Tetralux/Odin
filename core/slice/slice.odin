@@ -264,6 +264,11 @@ into_dynamic :: proc(a: $T/[]$E) -> [dynamic]E {
 length :: proc(a: $T/[]$E) -> int {
 	return len(a)
 }
+set_length :: proc(s: ^[]$E, n: int) {
+    t := cast(^mem.Raw_Slice) s
+    t.len = n
+}
+
 is_empty :: proc(a: $T/[]$E) -> bool {
 	return len(a) == 0
 }
@@ -349,6 +354,18 @@ filter :: proc(s: $S/[]$U, f: proc(U) -> bool, allocator := context.allocator) -
 		}
 	}
 	return r[:]
+}
+
+keep_if :: proc(s: ^[]$E, predicate: proc(E) -> bool) {
+    t := s^
+    for i := 0; i < len(t); {
+        if !predicate(t[i]) {
+            ordered_remove(&t, i)
+        } else {
+            i += 1
+        }
+    }
+    s^ = t
 }
 
 scanner :: proc (s: $S/[]$U, initializer: $V, f: proc(V, U) -> V, allocator := context.allocator) -> []V {
@@ -493,4 +510,152 @@ dot_product :: proc(a, b: $S/[]$T) -> (r: T, ok: bool)
 		r += a[i] * b[i]
 	}
 	return r, true
+}
+
+@(require_results)
+put_safe :: proc(m: ^map[$K]$V, k: K, v: V, loc := #caller_location) -> mem.Allocator_Error {
+    n := len(m)
+    _, present := m[k]
+
+    m[k] = v
+
+    if !present {
+        if len(m) != n+1 {
+            return .Out_Of_Memory
+        }
+    }
+
+    return .None
+}
+
+@(require_results)
+append_safe :: proc(a: ^[dynamic]$E, item: E) -> mem.Allocator_Error {
+    n := len(a)
+    append(a, item)
+    if len(a) != n+1 {
+        return .Out_Of_Memory
+    }
+    return .None
+}
+
+@(require_results)
+append_nothing_safe :: proc(a: ^[dynamic]$E) -> (ptr: ^E, err: mem.Allocator_Error) {
+    n := len(a)
+    append_nothing(a)
+    if len(a) != n+1 {
+        return nil, .Out_Of_Memory
+    }
+    #no_bounds_check {
+        return &a[n], .None
+    }
+}
+
+@(require_results)
+insert_at_safe :: proc(a: ^[dynamic]$E, index: int, item: E) -> (err: mem.Allocator_Error) {
+    if insert_at(a, index, item) {
+        return .None
+    } else {
+        return .Out_Of_Memory
+    }
+}
+
+
+must_append :: proc(a: ^[dynamic]$E, e: E, loc := #caller_location) -> ^E {
+    ptr := must_append_nothing(a, loc)
+    ptr^ = e
+    return ptr
+}
+
+must_append_nothing :: proc(a: ^[dynamic]$E, loc := #caller_location) -> ^E {
+    n := len(a)
+    append_nothing(a)
+    ok := len(a) == n+1
+    fmt.assertf(condition=ok, fmt="append_nothing_or_fail: cannot append to array", args={}, loc=loc)
+    #no_bounds_check {
+        return &a[len(a)-1]
+    }
+}
+
+
+last_elem_ptr :: proc(a: []$E) -> ^E {
+    if len(a) == 0 {
+        return nil
+    }
+    #no_bounds_check {
+        return &a[len(a)-1]
+    }
+}
+last_elem :: proc(s: []$E, loc := #caller_location) -> E {
+    assert(condition=len(s) > 0, loc=loc)
+    #no_bounds_check {
+        return s[len(s) - 1]
+    }
+}
+last_elem_or_nil :: proc(items: []$E) -> Maybe(E) {
+    if len(items) == 0 {
+        return nil
+    }
+    #no_bounds_check {
+        return items[len(items) - 1]
+    }
+}
+
+first_elem_ptr :: proc(a: []$E) -> ^E {
+    if len(a) == 0 {
+        return nil
+    }
+    #no_bounds_check {
+        return &a[0]
+    }
+}
+first_elem :: proc(s: []$E, loc := #caller_location) -> E {
+    assert(condition=len(s) > 0, loc=loc)
+    #no_bounds_check {
+        return s[0]
+    }
+}
+first_elem_or_nil :: proc(items: []$E) -> Maybe(E) {
+    if len(items) == 0 {
+        return nil
+    }
+    #no_bounds_check {
+        return items[0]
+    }
+}
+
+
+unordered_remove :: proc(s: ^[]$E, #any_int i: int, loc := #caller_location) -> (removed: E) {
+    runtime.bounds_check_error(loc.file_path, loc.line, loc.column, i, len(s))
+    switch len(s) {
+    case 1:
+        #no_bounds_check removed = s[0]
+        s^ = nil
+    case:
+        t := s^
+        #no_bounds_check {
+            removed = t[i]
+            t[i] = t[len(s)-1]
+        }
+        set_length(&t, len(t) - 1)
+        s^ = t
+    }
+    return
+}
+
+ordered_remove :: proc(s: ^[]$E, #any_int i: int, loc := #caller_location) -> (removed: E) {
+    runtime.bounds_check_error(loc.file_path, loc.line, loc.column, i, len(s))
+    switch len(s) {
+    case 1:
+        #no_bounds_check removed = s[0]
+        s^ = nil
+    case:
+        t := s^
+        #no_bounds_check {
+            removed = t[i]
+            copy(t[i:], t[i+1:])
+        }
+        set_length(&t, len(t) - 1)
+        s^ = t
+    }
+    return
 }
