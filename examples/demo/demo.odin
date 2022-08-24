@@ -635,6 +635,17 @@ union_type :: proc() {
 			if e.is_zombie { fmt.println("Grrrr!")  }
 			fmt.println("I'm a monster")
 		}
+
+		/*
+			You'll note that we never free the entity that's returned from new_entity(). (Allocated by 'new(T)')
+			This is a memory leak, which Odin lets you do if you'd like to.
+
+			In this case, the leak is perfectly fine, since this is a demo, it's a short-lived program, and it doesn't use very much memory; it really doesn't matter.
+			The OS automatically reclaims all resources in use when the program quits.
+
+			If we wanted to free it, since it's a '^T', you'd just do 'free(entity)' in this case.
+			If it was a slice instead, you'd use 'delete' instead.
+		*/
 	}
 
 	{
