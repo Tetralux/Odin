@@ -90,7 +90,9 @@ import odin_parser      "core:odin/parser"
 import odin_printer     "core:odin/printer"
 import odin_tokenizer   "core:odin/tokenizer"
 
-import os               "core:os"
+import net            "core:net"
+
+import os             "core:os"
 
 import slashpath        "core:path/slashpath"
 import filepath         "core:path/filepath"
@@ -194,6 +196,7 @@ _ :: odin_parser
 _ :: odin_printer
 _ :: odin_tokenizer
 _ :: os
+_ :: net
 _ :: slashpath
 _ :: filepath
 _ :: reflect
