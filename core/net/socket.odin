@@ -85,3 +85,13 @@ dial_tcp :: proc{
 	dial_tcp_from_hostname_and_port_string,
 	dial_tcp_from_hostname_string_and_explicit_port,
 }
+
+
+
+Multicast_Group :: struct {
+	// The multicast address of this group on the network.
+	group_endpoint: Endpoint,
+	// The local IP address of the network interface that the group is associated with.
+	// NOTE: The 'Any' address -can- be used here.
+	interface_address: Address,
+}
