@@ -18,17 +18,17 @@ _heap_alloc :: proc(size: int, zero_memory := true) -> rawptr {
 	HEAP_ZERO_MEMORY :: 0x00000008
 	return HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY if zero_memory else 0, uint(size))
 }
-_heap_resize :: proc(ptr: rawptr, new_size: int) -> rawptr {
+_heap_resize :: proc(ptr: rawptr, new_size: int, zero_memory := true) -> rawptr {
 	if new_size == 0 {
 		_heap_free(ptr)
 		return nil
 	}
 	if ptr == nil {
-		return _heap_alloc(new_size)
+		return _heap_alloc(new_size, zero_memory)
 	}
 
 	HEAP_ZERO_MEMORY :: 0x00000008
-	return HeapReAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, ptr, uint(new_size))
+	return HeapReAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY if zero_memory else 0, ptr, uint(new_size))
 }
 _heap_free :: proc(ptr: rawptr) {
 	if ptr == nil {

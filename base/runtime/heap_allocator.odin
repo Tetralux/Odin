@@ -26,7 +26,7 @@ heap_allocator_proc :: proc(allocator_data: rawptr, mode: Allocator_Mode,
 		allocated_mem: rawptr
 		if old_ptr != nil {
 			original_old_ptr := ([^]rawptr)(old_ptr)[-1]
-			allocated_mem = heap_resize(original_old_ptr, space+size_of(rawptr))
+			allocated_mem = heap_resize(original_old_ptr, space+size_of(rawptr), zero_memory)
 		} else {
 			allocated_mem = heap_alloc(space+size_of(rawptr), zero_memory)
 		}
@@ -101,8 +101,8 @@ heap_alloc :: proc(size: int, zero_memory := true) -> rawptr {
 	return _heap_alloc(size, zero_memory)
 }
 
-heap_resize :: proc(ptr: rawptr, new_size: int) -> rawptr {
-	return _heap_resize(ptr, new_size)
+heap_resize :: proc(ptr: rawptr, new_size: int, zero_memory := true) -> rawptr {
+	return _heap_resize(ptr, new_size, zero_memory)
 }
 
 heap_free :: proc(ptr: rawptr) {

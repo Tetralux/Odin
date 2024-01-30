@@ -17,7 +17,7 @@ heap_resize :: proc(ptr: rawptr, new_size: int, zero_memory: bool) -> rawptr {
 		return heap_alloc(new_size, zero_memory)
 	}
 
-	return win32.HeapReAlloc(win32.GetProcessHeap(), win32.HEAP_ZERO_MEMORY, ptr, uint(new_size))
+	return win32.HeapReAlloc(win32.GetProcessHeap(), win32.HEAP_ZERO_MEMORY if zero_memory else 0, ptr, uint(new_size))
 }
 heap_free :: proc(ptr: rawptr) {
 	if ptr == nil {
