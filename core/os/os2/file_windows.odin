@@ -828,7 +828,7 @@ _exists :: proc(path: string) -> bool {
 }
 
 @(private="package")
-_file_stream_proc :: proc(stream_data: rawptr, mode: io.Stream_Mode, p: []byte, offset: i64, whence: io.Seek_From) -> (n: i64, err: io.Error) {
+_file_stream_proc :: proc(stream_data: rawptr, mode: io.Stream_Mode, p: []byte, offset: i64, whence: io.Seek_From, loc: runtime.Source_Code_Location) -> (n: i64, err: io.Error) {
 	f := (^File_Impl)(stream_data)
 	ferr: Error
 	switch mode {

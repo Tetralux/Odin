@@ -2,6 +2,7 @@ package bytes
 
 import "core:io"
 import "core:unicode/utf8"
+import "base:runtime"
 
 MIN_READ :: 512
 
@@ -411,7 +412,7 @@ buffer_to_stream :: proc(b: ^Buffer) -> (s: io.Stream) {
 }
 
 @(private)
-_buffer_proc :: proc(stream_data: rawptr, mode: io.Stream_Mode, p: []byte, offset: i64, whence: io.Seek_From) -> (n: i64, err: io.Error) {
+_buffer_proc :: proc(stream_data: rawptr, mode: io.Stream_Mode, p: []byte, offset: i64, whence: io.Seek_From, loc: runtime.Source_Code_Location) -> (n: i64, err: io.Error) {
 	b := (^Buffer)(stream_data)
 	#partial switch mode {
 	case .Read:

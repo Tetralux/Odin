@@ -2,6 +2,7 @@ package strings
 
 import "core:io"
 import "core:unicode/utf8"
+import "base:runtime"
 
 /*
 io stream data for a string reader that can read based on bytes or runes
@@ -294,7 +295,7 @@ This VTable is used by the Reader struct to provide its functionality
 as an `io.Stream`.
 */
 @(private)
-_reader_proc :: proc(stream_data: rawptr, mode: io.Stream_Mode, p: []byte, offset: i64, whence: io.Seek_From) -> (n: i64, err: io.Error) {
+_reader_proc :: proc(stream_data: rawptr, mode: io.Stream_Mode, p: []byte, offset: i64, whence: io.Seek_From, loc: runtime.Source_Code_Location) -> (n: i64, err: io.Error) {
 	r := (^Reader)(stream_data)
 	#partial switch mode {
 	case .Size:

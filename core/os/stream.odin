@@ -1,6 +1,7 @@
 package os
 
 import "core:io"
+import "base:runtime"
 
 stream_from_handle :: proc(fd: Handle) -> io.Stream {
 	s: io.Stream
@@ -11,7 +12,7 @@ stream_from_handle :: proc(fd: Handle) -> io.Stream {
 
 
 @(private)
-_file_stream_proc :: proc(stream_data: rawptr, mode: io.Stream_Mode, p: []byte, offset: i64, whence: io.Seek_From) -> (n: i64, err: io.Error) {
+_file_stream_proc :: proc(stream_data: rawptr, mode: io.Stream_Mode, p: []byte, offset: i64, whence: io.Seek_From, loc: runtime.Source_Code_Location) -> (n: i64, err: io.Error) {
 	fd := Handle(uintptr(stream_data))
 	n_int: int
 	os_err: Error

@@ -2,6 +2,7 @@ package libc
 
 import "core:c"
 import "core:io"
+import "base:runtime"
 
 when ODIN_OS == .Windows {
 	foreign import libc {
@@ -302,7 +303,7 @@ foreign libc {
 }
 
 to_stream :: proc(file: ^FILE) -> io.Stream {
-	stream_proc :: proc(stream_data: rawptr, mode: io.Stream_Mode, p: []byte, offset: i64, whence: io.Seek_From) -> (n: i64, err: io.Error) {
+	stream_proc :: proc(stream_data: rawptr, mode: io.Stream_Mode, p: []byte, offset: i64, whence: io.Seek_From, loc: runtime.Source_Code_Location) -> (n: i64, err: io.Error) {
 		unknown_or_eof :: proc(f: ^FILE) -> io.Error {
 			switch {
 			case ferror(f) != 0:

@@ -3,6 +3,7 @@ package io
 import "core:strconv"
 import "core:unicode/utf8"
 import "core:unicode/utf16"
+import "base:runtime"
 
 read_ptr :: proc(r: Reader, p: rawptr, byte_size: int, n_read: ^int = nil) -> (n: int, err: Error) {
 	return read(r, ([^]byte)(p)[:byte_size], n_read)
@@ -109,49 +110,49 @@ n_wrapper :: proc(n: int, err: Error, bytes_processed: ^int) -> Error {
 }
 
 
-write_encoded_rune :: proc(w: Writer, r: rune, write_quote := true, n_written: ^int = nil) -> (n: int, err: Error) {
+write_encoded_rune :: proc(w: Writer, r: rune, write_quote := true, n_written: ^int = nil, loc := #caller_location) -> (n: int, err: Error) {
 	defer if n_written != nil {
 		n_written^ += n
 	}
 	if write_quote {
-		write_byte(w, '\'', &n) or_return
+		write_byte(w, '\'', &n, loc) or_return
 	}
 	switch r {
-	case '\a': write_string(w, `\a`, &n) or_return
-	case '\b': write_string(w, `\b`, &n) or_return
-	case '\e': write_string(w, `\e`, &n) or_return
-	case '\f': write_string(w, `\f`, &n) or_return
-	case '\n': write_string(w, `\n`, &n) or_return
-	case '\r': write_string(w, `\r`, &n) or_return
-	case '\t': write_string(w, `\t`, &n) or_return
-	case '\v': write_string(w, `\v`, &n) or_return
+	case '\a': write_string(w, `\a`, &n, loc) or_return
+	case '\b': write_string(w, `\b`, &n, loc) or_return
+	case '\e': write_string(w, `\e`, &n, loc) or_return
+	case '\f': write_string(w, `\f`, &n, loc) or_return
+	case '\n': write_string(w, `\n`, &n, loc) or_return
+	case '\r': write_string(w, `\r`, &n, loc) or_return
+	case '\t': write_string(w, `\t`, &n, loc) or_return
+	case '\v': write_string(w, `\v`, &n, loc) or_return
 	case:
 		if r < 32 {
-			write_string(w, `\x`, &n) or_return
+			write_string(w, `\x`, &n, loc) or_return
 			
 			buf: [2]byte
 			s := strconv.write_bits(buf[:], u64(r), 16, true, 64, strconv.digits, nil)
 			switch len(s) {
 			case 0: 
-				write_string(w, "00", &n) or_return
+				write_string(w, "00", &n, loc) or_return
 			case 1: 
-				write_byte(w, '0',    &n) or_return
+				write_byte(w, '0',    &n, loc) or_return
 				fallthrough
 			case 2: 
-				write_string(w, s,    &n) or_return
+				write_string(w, s,    &n, loc) or_return
 			}
 		} else {
-			write_rune(w, r, &n) or_return
+			write_rune(w, r, &n, loc) or_return
 		}
 
 	}
 	if write_quote {
-		write_byte(w, '\'', &n) or_return
+		write_byte(w, '\'', &n, loc) or_return
 	}
 	return
 }
 
-write_escaped_rune :: proc(w: Writer, r: rune, quote: byte, html_safe := false, n_written: ^int = nil, for_json := false) -> (n: int, err: Error) {
+write_escaped_rune :: proc(w: Writer, r: rune, quote: byte, html_safe := false, n_written: ^int = nil, for_json := false, loc := #caller_location) -> (n: int, err: Error) {
 	is_printable :: proc(r: rune) -> bool {
 		if r <= 0xff {
 			switch r {
@@ -172,65 +173,65 @@ write_escaped_rune :: proc(w: Writer, r: rune, quote: byte, html_safe := false, 
 	if html_safe {
 		switch r {
 		case '<', '>', '&':
-			write_byte(w, '\\', &n) or_return
-			write_byte(w, 'u', &n)  or_return
+			write_byte(w, '\\', &n, loc) or_return
+			write_byte(w, 'u', &n, loc)  or_return
 			for s := 12; s >= 0; s -= 4 {
-				write_byte(w, DIGITS_LOWER[r>>uint(s) & 0xf], &n) or_return
+				write_byte(w, DIGITS_LOWER[r>>uint(s) & 0xf], &n, loc) or_return
 			}
 			return
 		}
 	}
 
 	if r == rune(quote) || r == '\\' {
-		write_byte(w, '\\', &n)    or_return
-		write_byte(w, byte(r), &n) or_return
+		write_byte(w, '\\', &n, loc)    or_return
+		write_byte(w, byte(r), &n, loc) or_return
 		return
 	} else if is_printable(r) {
-		write_encoded_rune(w, r, false, &n) or_return
+		write_encoded_rune(w, r, false, &n, loc) or_return
 		return
 	}
 	switch r {
-	case '\a': write_string(w, `\a`, &n) or_return
-	case '\b': write_string(w, `\b`, &n) or_return
-	case '\e': write_string(w, `\e`, &n) or_return
-	case '\f': write_string(w, `\f`, &n) or_return
-	case '\n': write_string(w, `\n`, &n) or_return
-	case '\r': write_string(w, `\r`, &n) or_return
-	case '\t': write_string(w, `\t`, &n) or_return
-	case '\v': write_string(w, `\v`, &n) or_return
+	case '\a': write_string(w, `\a`, &n, loc) or_return
+	case '\b': write_string(w, `\b`, &n, loc) or_return
+	case '\e': write_string(w, `\e`, &n, loc) or_return
+	case '\f': write_string(w, `\f`, &n, loc) or_return
+	case '\n': write_string(w, `\n`, &n, loc) or_return
+	case '\r': write_string(w, `\r`, &n, loc) or_return
+	case '\t': write_string(w, `\t`, &n, loc) or_return
+	case '\v': write_string(w, `\v`, &n, loc) or_return
 	case:
 		switch c := r; {
 		case c < ' ':
-			write_byte(w, '\\', &n)                      or_return
-			write_byte(w, 'x', &n)                       or_return
-			write_byte(w, DIGITS_LOWER[byte(c)>>4], &n)  or_return
-			write_byte(w, DIGITS_LOWER[byte(c)&0xf], &n) or_return
+			write_byte(w, '\\', &n, loc)                      or_return
+			write_byte(w, 'x', &n, loc)                       or_return
+			write_byte(w, DIGITS_LOWER[byte(c)>>4], &n, loc)  or_return
+			write_byte(w, DIGITS_LOWER[byte(c)&0xf], &n, loc) or_return
 
 		case c > utf8.MAX_RUNE:
 			c = 0xfffd
 			fallthrough
 		case c < 0x10000:
-			write_byte(w, '\\', &n) or_return
-			write_byte(w, 'u', &n)  or_return
+			write_byte(w, '\\', &n, loc) or_return
+			write_byte(w, 'u', &n, loc)  or_return
 			for s := 12; s >= 0; s -= 4 {
-				write_byte(w, DIGITS_LOWER[c>>uint(s) & 0xf], &n) or_return
+				write_byte(w, DIGITS_LOWER[c>>uint(s) & 0xf], &n, loc) or_return
 			}
 		case:
 			if for_json {
 				buf: [2]u16
 				utf16.encode(buf[:], []rune{c})
 				for bc in buf {
-					write_byte(w, '\\', &n) or_return
-					write_byte(w, 'u', &n)  or_return
+					write_byte(w, '\\', &n, loc) or_return
+					write_byte(w, 'u', &n, loc)  or_return
 					for s := 12; s >= 0; s -= 4 {
-						write_byte(w, DIGITS_LOWER[bc>>uint(s) & 0xf], &n) or_return
+						write_byte(w, DIGITS_LOWER[bc>>uint(s) & 0xf], &n, loc) or_return
 					}
 				}
 			} else {
-				write_byte(w, '\\', &n) or_return
-				write_byte(w, 'U', &n)  or_return
+				write_byte(w, '\\', &n, loc) or_return
+				write_byte(w, 'U', &n, loc)  or_return
 				for s := 28; s >= 0; s -= 4 {
-					write_byte(w, DIGITS_LOWER[c>>uint(s) & 0xf], &n) or_return
+					write_byte(w, DIGITS_LOWER[c>>uint(s) & 0xf], &n, loc) or_return
 				}
 			}
 		}
@@ -238,11 +239,11 @@ write_escaped_rune :: proc(w: Writer, r: rune, quote: byte, html_safe := false, 
 	return
 }
 
-write_quoted_string :: proc(w: Writer, str: string, quote: byte = '"', n_written: ^int = nil, for_json := false) -> (n: int, err: Error) {
+write_quoted_string :: proc(w: Writer, str: string, quote: byte = '"', n_written: ^int = nil, for_json := false, loc := #caller_location) -> (n: int, err: Error) {
 	defer if n_written != nil {
 		n_written^ += n
 	}
-	write_byte(w, quote, &n) or_return
+	write_byte(w, quote, &n, loc) or_return
 	for width, s := 0, str; len(s) > 0; s = s[width:] {
 		r := rune(s[0])
 		width = 1
@@ -250,25 +251,25 @@ write_quoted_string :: proc(w: Writer, str: string, quote: byte = '"', n_written
 			r, width = utf8.decode_rune_in_string(s)
 		}
 		if width == 1 && r == utf8.RUNE_ERROR {
-			write_byte(w, '\\', &n)                   or_return
-			write_byte(w, 'x', &n)                    or_return
-			write_byte(w, DIGITS_LOWER[s[0]>>4], &n)  or_return
-			write_byte(w, DIGITS_LOWER[s[0]&0xf], &n) or_return
+			write_byte(w, '\\', &n, loc)                   or_return
+			write_byte(w, 'x', &n, loc)                    or_return
+			write_byte(w, DIGITS_LOWER[s[0]>>4], &n, loc)  or_return
+			write_byte(w, DIGITS_LOWER[s[0]&0xf], &n, loc) or_return
 			continue
 		}
 
-		n_wrapper(write_escaped_rune(w, r, quote, false, nil, for_json), &n) or_return
+		n_wrapper(write_escaped_rune(w, r, quote, false, nil, for_json, loc), &n) or_return
 
 	}
-	write_byte(w, quote, &n) or_return
+	write_byte(w, quote, &n, loc) or_return
 	return
 }
 
-write_quoted_string16 :: proc(w: Writer, str: string16, quote: byte = '"', n_written: ^int = nil, for_json := false) -> (n: int, err: Error) {
+write_quoted_string16 :: proc(w: Writer, str: string16, quote: byte = '"', n_written: ^int = nil, for_json := false, loc := #caller_location) -> (n: int, err: Error) {
 	defer if n_written != nil {
 		n_written^ += n
 	}
-	write_byte(w, quote, &n) or_return
+	write_byte(w, quote, &n, loc) or_return
 	for width, s := 0, str; len(s) > 0; s = s[width:] {
 		r := rune(s[0])
 		width = 1
@@ -276,41 +277,41 @@ write_quoted_string16 :: proc(w: Writer, str: string16, quote: byte = '"', n_wri
 			r, width = utf16.decode_rune_in_string(s)
 		}
 		if width == 1 && r == utf8.RUNE_ERROR {
-			write_byte(w, '\\', &n)                   or_return
-			write_byte(w, 'x', &n)                    or_return
-			write_byte(w, DIGITS_LOWER[s[0]>>4], &n)  or_return
-			write_byte(w, DIGITS_LOWER[s[0]&0xf], &n) or_return
+			write_byte(w, '\\', &n, loc)                   or_return
+			write_byte(w, 'x', &n, loc)                    or_return
+			write_byte(w, DIGITS_LOWER[s[0]>>4], &n, loc)  or_return
+			write_byte(w, DIGITS_LOWER[s[0]&0xf], &n, loc) or_return
 			continue
 		}
 
-		n_wrapper(write_escaped_rune(w, r, quote, false, nil, for_json), &n) or_return
+		n_wrapper(write_escaped_rune(w, r, quote, false, nil, for_json, loc), &n) or_return
 
 	}
-	write_byte(w, quote, &n) or_return
+	write_byte(w, quote, &n, loc) or_return
 	return
 }
 
 
 // writer append a quoted rune into the byte buffer, return the written size
-write_quoted_rune :: proc(w: Writer, r: rune) -> (n: int) {
-	_write_byte :: #force_inline proc(w: Writer, c: byte) -> int {
-		err := write_byte(w, c)
+write_quoted_rune :: proc(w: Writer, r: rune, loc := #caller_location) -> (n: int) {
+	_write_byte :: #force_inline proc(w: Writer, c: byte, loc: runtime.Source_Code_Location) -> int {
+		err := write_byte(w, c, loc = loc)
 		return 1 if err == nil else 0
 	}
 
 	quote := byte('\'')
-	n += _write_byte(w, quote)
+	n += _write_byte(w, quote, loc)
 	buf, width := utf8.encode_rune(r)
 	if width == 1 && r == utf8.RUNE_ERROR {
-		n += _write_byte(w, '\\')
-		n += _write_byte(w, 'x')
-		n += _write_byte(w, DIGITS_LOWER[buf[0]>>4])
-		n += _write_byte(w, DIGITS_LOWER[buf[0]&0xf])
+		n += _write_byte(w, '\\', loc)
+		n += _write_byte(w, 'x', loc)
+		n += _write_byte(w, DIGITS_LOWER[buf[0]>>4], loc)
+		n += _write_byte(w, DIGITS_LOWER[buf[0]&0xf], loc)
 	} else {
-		i, _ := write_escaped_rune(w, r, quote)
+		i, _ := write_escaped_rune(w, r, quote, loc = loc)
 		n += i
 	}
-	n += _write_byte(w, quote)
+	n += _write_byte(w, quote, loc)
 	return
 }
 
@@ -323,13 +324,13 @@ Tee_Reader :: struct {
 }
 
 @(private)
-_tee_reader_proc :: proc(stream_data: rawptr, mode: Stream_Mode, p: []byte, offset: i64, whence: Seek_From) -> (n: i64, err: Error) {
+_tee_reader_proc :: proc(stream_data: rawptr, mode: Stream_Mode, p: []byte, offset: i64, whence: Seek_From, loc: runtime.Source_Code_Location) -> (n: i64, err: Error) {
 	t := (^Tee_Reader)(stream_data)
 	#partial switch mode {
 	case .Read:
 		n, err = _i64_err(read(t.r, p))
 		if n > 0 {
-			if wn, werr := write(t.w, p[:n]); werr != nil {
+			if wn, werr := write(t.w, p[:n], loc = loc); werr != nil {
 				return i64(wn), werr
 			}
 		}
@@ -367,7 +368,7 @@ Limited_Reader :: struct {
 }
 
 @(private)
-_limited_reader_proc :: proc(stream_data: rawptr, mode: Stream_Mode, p: []byte, offset: i64, whence: Seek_From) -> (n: i64, err: Error) {
+_limited_reader_proc :: proc(stream_data: rawptr, mode: Stream_Mode, p: []byte, offset: i64, whence: Seek_From, loc: runtime.Source_Code_Location) -> (n: i64, err: Error) {
 	l := (^Limited_Reader)(stream_data)
 	#partial switch mode {
 	case .Read:
@@ -381,7 +382,7 @@ _limited_reader_proc :: proc(stream_data: rawptr, mode: Stream_Mode, p: []byte, 
 		if i64(len(p)) > l.n {
 			p = p[0:l.n]
 		}
-		n, err = _i64_err(read(l.r, p))
+		n, err = _i64_err(read(l.r, p, loc = loc))
 		l.n -= i64(n)
 		return
 	case .Query:
@@ -424,7 +425,7 @@ section_reader_to_stream :: proc(s: ^Section_Reader) -> (out: Stream) {
 }
 
 @(private)
-_section_reader_proc :: proc(stream_data: rawptr, mode: Stream_Mode, p: []byte, offset: i64, whence: Seek_From) -> (n: i64, err: Error) {
+_section_reader_proc :: proc(stream_data: rawptr, mode: Stream_Mode, p: []byte, offset: i64, whence: Seek_From, loc: runtime.Source_Code_Location) -> (n: i64, err: Error) {
 	s := (^Section_Reader)(stream_data)
 	#partial switch mode {
 	case .Read:
@@ -438,7 +439,7 @@ _section_reader_proc :: proc(stream_data: rawptr, mode: Stream_Mode, p: []byte, 
 		if max := s.limit - s.off; i64(len(p)) > max {
 			p = p[0:max]
 		}
-		n, err = _i64_err(read_at(s.r, p, s.off))
+		n, err = _i64_err(read_at(s.r, p, s.off, loc = loc))
 		s.off += i64(n)
 		return
 	case .Read_At:
@@ -453,13 +454,13 @@ _section_reader_proc :: proc(stream_data: rawptr, mode: Stream_Mode, p: []byte, 
 		off += s.base
 		if max := s.limit - off; i64(len(p)) > max {
 			p = p[0:max]
-			n, err = _i64_err(read_at(s.r, p, off))
+			n, err = _i64_err(read_at(s.r, p, off, loc = loc))
 			if err == nil {
 				err = .EOF
 			}
 			return
 		}
-		return _i64_err(read_at(s.r, p, off))
+		return _i64_err(read_at(s.r, p, off, loc = loc))
 
 	case .Seek:
 		offset := offset
