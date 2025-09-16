@@ -452,7 +452,6 @@ _sockaddr_to_endpoint :: proc(native_addr: ^win.SOCKADDR_STORAGE_LH) -> (ep: End
 
 
 // Join a multicast group so that the socket is able to send or recieve multicast packets within that group.
-// NOTE: This procedure assumes that the socket is already bound to 'group.group_endpoint'.
 join_multicast_group :: proc(skt: UDP_Socket, group: Multicast_Group) -> Join_Multicast_Error {
 	native_multicast_addr := _endpoint_to_sockaddr(group.group_endpoint)
 	native_interface_addr := _endpoint_to_sockaddr({ address = group.interface_address })
