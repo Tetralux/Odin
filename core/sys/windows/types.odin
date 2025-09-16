@@ -4955,8 +4955,9 @@ IPV6_V6ONLY: c_int : 27
 IP_MULTICAST_LOOP: c_int : 11
 IPV6_MULTICAST_LOOP: c_int : 11
 IP_MULTICAST_TTL: c_int : 10
-IP_ADD_MEMBERSHIP: c_int : 12
 
+IP_ADD_MEMBERSHIP: c_int : 12
+IP_DROP_MEMBERSHIP: c_int : 13
 IPV6_ADD_MEMBERSHIP: c_int : 12
 IPV6_DROP_MEMBERSHIP: c_int : 13
 
@@ -4983,7 +4984,7 @@ ip_mreq :: struct {
 
 ipv6_mreq :: struct {
 	ipv6mr_multiaddr: in6_addr,
-	ipv6mr_interface: c_uint,
+	ipv6mr_interface: in6_addr,
 }
 
 SOCKADDR_STORAGE_LH :: struct {

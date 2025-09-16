@@ -449,3 +449,68 @@ _sockaddr_to_endpoint :: proc(native_addr: ^win.SOCKADDR_STORAGE_LH) -> (ep: End
 	}
 	return
 }
+
+
+// Join a multicast group so that the socket is able to send or recieve multicast packets within that group.
+// NOTE: This procedure assumes that the socket is already bound to 'group.group_endpoint'.
+join_multicast_group :: proc(skt: UDP_Socket, group: Multicast_Group) -> Join_Multicast_Error {
+	native_multicast_addr := _endpoint_to_sockaddr(group.group_endpoint)
+	native_interface_addr := _endpoint_to_sockaddr({ address = group.interface_address })
+
+	res: c.int
+	switch _ in group.group_endpoint.address {
+	case IP4_Address:
+		ipv4 := win.ip_mreq {
+			imr_multiaddr = (^win.sockaddr_in)(&native_multicast_addr).sin_addr,
+			imr_interface = (^win.sockaddr_in)(&native_interface_addr).sin_addr,
+		}
+		res = win.setsockopt(win.SOCKET(skt), win.IPPROTO_IP, win.IP_ADD_MEMBERSHIP, &ipv4, size_of(ipv4))
+	case IP6_Address:
+		ipv6 := win.ipv6_mreq {
+			ipv6mr_multiaddr = (^win.sockaddr_in6)(&native_multicast_addr).sin6_addr,
+			ipv6mr_interface = (^win.sockaddr_in6)(&native_interface_addr).sin6_addr,
+		}
+		res = win.setsockopt(win.SOCKET(skt), win.IPPROTO_IP, win.IPV6_ADD_MEMBERSHIP, &ipv6, size_of(ipv6))
+	case:
+		panic("join_multicast_group(): Group multicast address is not an IPv4 or IPv6 address.")
+	}
+	if res < 0 {
+		return _join_multicast_error()
+	}
+
+	return nil
+}
+
+// Leave a previously-joined multicast group.
+// The 'group' must contain the same data as the original one passed to 'join_multicast_group()'.
+// NOTE: If the 'Any' address was used for the interface, then the -first- matching group will be dropped, rather than one using a specific network interface,
+//       that otherwise matches the same multicast address.
+// NOTE: Leaving a group does -not- imply that the host machine will stop receiving multicasts packets in this group; if other sockets are a members of the same
+//       group on this machine, then the host machine is still a member of the group.
+leave_multicast_group :: proc(skt: UDP_Socket, group: Multicast_Group) -> Leave_Multicast_Error {
+	native_multicast_addr := _endpoint_to_sockaddr(group.group_endpoint)
+	native_interface_addr := _endpoint_to_sockaddr({ address = group.interface_address })
+
+	res: c.int
+	switch _ in group.group_endpoint.address {
+	case IP4_Address:
+		ipv4 := win.ip_mreq {
+			imr_multiaddr = (^win.sockaddr_in)(&native_multicast_addr).sin_addr,
+			imr_interface = (^win.sockaddr_in)(&native_interface_addr).sin_addr,
+		}
+		res = win.setsockopt(win.SOCKET(skt), win.IPPROTO_IP, win.IP_DROP_MEMBERSHIP, &ipv4, size_of(ipv4))
+	case IP6_Address:
+		ipv6 := win.ipv6_mreq {
+			ipv6mr_multiaddr = (^win.sockaddr_in6)(&native_multicast_addr).sin6_addr,
+			ipv6mr_interface = (^win.sockaddr_in6)(&native_interface_addr).sin6_addr,
+		}
+		res = win.setsockopt(win.SOCKET(skt), win.IPPROTO_IP, win.IPV6_DROP_MEMBERSHIP, &ipv6, size_of(ipv6))
+	case:
+		panic("leave_multicast_group(): Group multicast address is not an IPv4 or IPv6 address.")
+	}
+	if res < 0 {
+		return _leave_multicast_error()
+	}
+
+	return nil
+}

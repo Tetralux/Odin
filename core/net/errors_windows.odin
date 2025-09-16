@@ -270,3 +270,29 @@ _set_blocking_error :: proc() -> Set_Blocking_Error {
 		return .Unknown
 	}
 }
+
+_join_multicast_error :: proc() -> Join_Multicast_Error {
+	#partial switch win.System_Error(win.WSAGetLastError()) {
+	case .WSAEFAULT, .WSAEINVAL:
+		return .Invalid_Value
+	case .WSAENETRESET, .WSAENOTCONN, .WSAENOTSOCK:
+		return .Invalid_Socket
+	case .WSAENOPROTOOPT:
+		return .Invalid_Option
+	case:
+		return .Unknown
+	}
+}
+
+_leave_multicast_error :: proc() -> Leave_Multicast_Error {
+	#partial switch win.System_Error(win.WSAGetLastError()) {
+	case .WSAEFAULT, .WSAEINVAL:
+		return .Invalid_Value
+	case .WSAENETRESET, .WSAENOTCONN, .WSAENOTSOCK:
+		return .Invalid_Socket
+	case .WSAENOPROTOOPT:
+		return .Invalid_Option
+	case:
+		return .Unknown
+	}
+}

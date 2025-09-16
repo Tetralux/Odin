@@ -290,3 +290,40 @@ Set_Blocking_Error :: enum i32 {
 	// An error unable to be categorized in above categories, `last_platform_error` may have more info.
 	Unknown,
 }
+
+
+Join_Multicast_Error :: enum i32 {
+	None = 0,
+
+	// No network connection, or the network stack is not initialized.
+	Network_Unreachable,
+	// Not enough space in internal tables/buffers to create a new socket, or an unsupported protocol is given.
+	Insufficient_Resources,
+	// Socket is invalid, not connected, or the connection has been closed/reset/shutdown.
+	Invalid_Socket,
+	// Unknown or unsupported option for the socket.
+	Invalid_Option,
+	// Invalid level or value.
+	Invalid_Value,
+
+	// An error unable to be categorized in above categories, `last_platform_error` may have more info.
+	Unknown,
+}
+
+Leave_Multicast_Error :: enum i32 {
+	None = 0,
+
+	// No network connection, or the network stack is not initialized.
+	Network_Unreachable,
+	// Not enough space in internal tables/buffers to create a new socket, or an unsupported protocol is given.
+	Insufficient_Resources,
+	// Socket is invalid, not connected, or the connection has been closed/reset/shutdown.
+	Invalid_Socket,
+	// Unknown or unsupported option for the socket.
+	Invalid_Option,
+	// Invalid level or value.
+	Invalid_Value,
+
+	// An error unable to be categorized in above categories, `last_platform_error` may have more info.
+	Unknown,
+}
