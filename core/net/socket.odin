@@ -275,3 +275,20 @@ set_option :: proc(socket: Any_Socket, option: Socket_Option, value: any, loc :=
 set_blocking :: proc(socket: Any_Socket, should_block: bool) -> (err: Set_Blocking_Error) {
 	return _set_blocking(socket, should_block)
 }
+
+// Join a multicast group so that the socket is able to send or recieve multicast packets within that group.
+// NOTE: Only the receiver needs to do this, and anyone who does will become a receiver.
+//       That is, joining a multicast group registers your machine as wanting to receive multicast packets.
+join_multicast_group :: proc(skt: UDP_Socket, group: Multicast_Group) -> Join_Multicast_Error {
+	return _join_multicast_group(skt, group)
+}
+
+// Leave a previously-joined multicast group.
+// The 'group' must contain the same data as the original one passed to 'join_multicast_group()'.
+// NOTE: If the 'Any' address was used for the interface, then the -first- matching group will be dropped, rather than one using a specific network interface,
+//       that otherwise matches the same multicast address.
+// NOTE: Leaving a group does -not- imply that the host machine will stop receiving multicasts packets in this group; if other sockets are a members of the same
+//       group on this machine, then the host machine is still a member of the group.
+leave_multicast_group :: proc(skt: UDP_Socket, group: Multicast_Group) -> Leave_Multicast_Error {
+	return _leave_multicast_group(skt, group)
+}

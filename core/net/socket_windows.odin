@@ -451,10 +451,7 @@ _sockaddr_to_endpoint :: proc(native_addr: ^win.SOCKADDR_STORAGE_LH) -> (ep: End
 }
 
 
-// Join a multicast group so that the socket is able to send or recieve multicast packets within that group.
-// NOTE: Only the receiver needs to do this, and anyone who does will become a receiver.
-//       That is, joining a multicast group registers your machine as wanting to receive multicast packets.
-join_multicast_group :: proc(skt: UDP_Socket, group: Multicast_Group) -> Join_Multicast_Error {
+_join_multicast_group :: proc(skt: UDP_Socket, group: Multicast_Group) -> Join_Multicast_Error {
 	native_multicast_addr := _endpoint_to_sockaddr(group.group_endpoint)
 	native_interface_addr := _endpoint_to_sockaddr({ address = group.interface_address })
 
@@ -482,13 +479,7 @@ join_multicast_group :: proc(skt: UDP_Socket, group: Multicast_Group) -> Join_Mu
 	return nil
 }
 
-// Leave a previously-joined multicast group.
-// The 'group' must contain the same data as the original one passed to 'join_multicast_group()'.
-// NOTE: If the 'Any' address was used for the interface, then the -first- matching group will be dropped, rather than one using a specific network interface,
-//       that otherwise matches the same multicast address.
-// NOTE: Leaving a group does -not- imply that the host machine will stop receiving multicasts packets in this group; if other sockets are a members of the same
-//       group on this machine, then the host machine is still a member of the group.
-leave_multicast_group :: proc(skt: UDP_Socket, group: Multicast_Group) -> Leave_Multicast_Error {
+_leave_multicast_group :: proc(skt: UDP_Socket, group: Multicast_Group) -> Leave_Multicast_Error {
 	native_multicast_addr := _endpoint_to_sockaddr(group.group_endpoint)
 	native_interface_addr := _endpoint_to_sockaddr({ address = group.interface_address })
 
