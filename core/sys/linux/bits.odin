@@ -1337,6 +1337,7 @@ Socket_Option :: enum {
 	PEERSEC                       = 31,
 	PASSSEC                       = 34,
 	IP_ADD_MEMBERSHIP             = 35,
+	IP_DROP_MEMBERSHIP            = 36,
 	MARK                          = 36,
 	PROTOCOL                      = 38,
 	DOMAIN                        = 39,
